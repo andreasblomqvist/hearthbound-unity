@@ -1,0 +1,293 @@
+using UnityEngine;
+
+namespace Hearthbound.World
+{
+    /// <summary>
+    /// World Seed Manager
+    /// Manages seed-based world generation for reproducible worlds
+    /// Same seed = same world every time
+    /// </summary>
+    public class WorldSeedManager : MonoBehaviour
+    {
+        #region Singleton
+        private static WorldSeedManager _instance;
+        public static WorldSeedManager Instance
+        {
+            get
+            {
+                if (_instance == null)
+                {
+                    _instance = FindObjectOfType<WorldSeedManager>();
+                }
+                return _instance;
+            }
+        }
+        #endregion
+
+        #region Seed Configuration
+        [Header("World Seed")]
+        [SerializeField] private int worldSeed = 12345;
+        [SerializeField] private bool useRandomSeed = false;
+        [SerializeField] private bool generateOnStart = true;
+
+        public int CurrentSeed => worldSeed;
+        #endregion
+
+        #region Seed History
+        [Header("Seed History")]
+        [SerializeField] private int[] recentSeeds = new int[10];
+        private int seedHistoryIndex = 0;
+        #endregion
+
+        #region Unity Lifecycle
+        private void Awake()
+        {
+            if (_instance != null && _instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+            _instance = this;
+
+            InitializeSeed();
+        }
+
+        private void Start()
+        {
+            if (generateOnStart)
+            {
+                GenerateWorld();
+            }
+        }
+        #endregion
+
+        #region Seed Management
+        private void InitializeSeed()
+        {
+            if (useRandomSeed)
+            {
+                GenerateRandomSeed();
+            }
+            else
+            {
+                SetSeed(worldSeed);
+            }
+        }
+
+        public void SetSeed(int seed)
+        {
+            worldSeed = seed;
+            Random.InitState(seed);
+            AddToHistory(seed);
+            Debug.Log($"🌍 World seed set to: {seed}");
+        }
+
+        public void GenerateRandomSeed()
+        {
+            worldSeed = Random.Range(int.MinValue, int.MaxValue);
+            Random.InitState(worldSeed);
+            AddToHistory(worldSeed);
+            Debug.Log($"🎲 Generated random world seed: {worldSeed}");
+        }
+
+        public void SetSeedFromString(string seedString)
+        {
+            // Try to parse as int
+            if (int.TryParse(seedString, out int seed))
+            {
+                SetSeed(seed);
+            }
+            else
+            {
+                // Use string hash as seed
+                seed = seedString.GetHashCode();
+                SetSeed(seed);
+                Debug.Log($"🔤 Converted string '{seedString}' to seed: {seed}");
+            }
+        }
+
+        private void AddToHistory(int seed)
+        {
+            recentSeeds[seedHistoryIndex] = seed;
+            seedHistoryIndex = (seedHistoryIndex + 1) % recentSeeds.Length;
+        }
+
+        public int[] GetSeedHistory()
+        {
+            return recentSeeds;
+        }
+        #endregion
+
+        #region World Generation
+        public void GenerateWorld()
+        {
+            Debug.Log($"🌍 Generating world with seed: {worldSeed}");
+            
+            // Initialize random with seed
+            Random.InitState(worldSeed);
+            
+            // Find and trigger all world generators
+            TerrainGenerator terrainGen = FindObjectOfType<TerrainGenerator>();
+            if (terrainGen != null)
+            {
+                terrainGen.GenerateTerrain(worldSeed);
+            }
+            
+            VillageBuilder villageBuilder = FindObjectOfType<VillageBuilder>();
+            if (villageBuilder != null)
+            {
+                villageBuilder.GenerateVillages(worldSeed);
+            }
+            
+            ForestGenerator forestGen = FindObjectOfType<ForestGenerator>();
+            if (forestGen != null)
+            {
+                forestGen.GenerateForests(worldSeed);
+            }
+            
+            Debug.Log("✅ World generation complete!");
+        }
+
+        public void RegenerateWorld()
+        {
+            Debug.Log("🔄 Regenerating world...");
+            
+            // Clear existing world
+            ClearWorld();
+            
+            // Generate new world with current seed
+            GenerateWorld();
+        }
+
+        public void GenerateNewRandomWorld()
+        {
+            GenerateRandomSeed();
+            ClearWorld();
+            GenerateWorld();
+        }
+
+        private void ClearWorld()
+        {
+            // Find and clear all generated content
+            TerrainGenerator terrainGen = FindObjectOfType<TerrainGenerator>();
+            if (terrainGen != null)
+            {
+                terrainGen.ClearTerrain();
+            }
+            
+            VillageBuilder villageBuilder = FindObjectOfType<VillageBuilder>();
+            if (villageBuilder != null)
+            {
+                villageBuilder.ClearVillages();
+            }
+            
+            ForestGenerator forestGen = FindObjectOfType<ForestGenerator>();
+            if (forestGen != null)
+            {
+                forestGen.ClearForests();
+            }
+        }
+        #endregion
+
+        #region Seed Utilities
+        /// <summary>
+        /// Get a derived seed for a specific system
+        /// Allows different systems to have different but deterministic seeds
+        /// </summary>
+        public int GetDerivedSeed(string systemName)
+        {
+            int hash = systemName.GetHashCode();
+            return worldSeed + hash;
+        }
+
+        /// <summary>
+        /// Get a seed for a specific position in the world
+        /// Useful for chunk-based generation
+        /// </summary>
+        public int GetPositionSeed(int x, int z)
+        {
+            // Combine world seed with position using prime numbers
+            return worldSeed + x * 73856093 + z * 19349663;
+        }
+
+        /// <summary>
+        /// Check if two seeds would generate the same world
+        /// </summary>
+        public bool SeedsMatch(int seed1, int seed2)
+        {
+            return seed1 == seed2;
+        }
+        #endregion
+
+        #region Save/Load
+        public string ExportSeed()
+        {
+            return worldSeed.ToString();
+        }
+
+        public void ImportSeed(string seedString)
+        {
+            SetSeedFromString(seedString);
+        }
+
+        public void SaveSeedToPlayerPrefs(string key = "WorldSeed")
+        {
+            PlayerPrefs.SetInt(key, worldSeed);
+            PlayerPrefs.Save();
+            Debug.Log($"💾 Saved seed {worldSeed} to PlayerPrefs");
+        }
+
+        public void LoadSeedFromPlayerPrefs(string key = "WorldSeed")
+        {
+            if (PlayerPrefs.HasKey(key))
+            {
+                int savedSeed = PlayerPrefs.GetInt(key);
+                SetSeed(savedSeed);
+                Debug.Log($"📂 Loaded seed {savedSeed} from PlayerPrefs");
+            }
+            else
+            {
+                Debug.LogWarning($"⚠️ No saved seed found in PlayerPrefs with key '{key}'");
+            }
+        }
+        #endregion
+
+        #region Debug
+        [ContextMenu("Generate Random Seed")]
+        private void DebugGenerateRandomSeed()
+        {
+            GenerateRandomSeed();
+        }
+
+        [ContextMenu("Regenerate World")]
+        private void DebugRegenerateWorld()
+        {
+            RegenerateWorld();
+        }
+
+        [ContextMenu("Print Seed Info")]
+        private void DebugPrintSeedInfo()
+        {
+            Debug.Log("=== World Seed Info ===");
+            Debug.Log($"Current Seed: {worldSeed}");
+            Debug.Log($"Use Random: {useRandomSeed}");
+            Debug.Log($"Recent Seeds: {string.Join(", ", recentSeeds)}");
+        }
+
+        [ContextMenu("Test Seed Reproducibility")]
+        private void DebugTestReproducibility()
+        {
+            Debug.Log("Testing seed reproducibility...");
+            
+            int testSeed = 12345;
+            Random.InitState(testSeed);
+            float value1 = Random.value;
+            
+            Random.InitState(testSeed);
+            float value2 = Random.value;
+            
+            Debug.Log($"Seed {testSeed}: First={value1}, Second={value2}, Match={value1 == value2}");
+        }
+        #endregion
+    }
+}
