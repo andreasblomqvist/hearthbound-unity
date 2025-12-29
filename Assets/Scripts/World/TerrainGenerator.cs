@@ -30,11 +30,28 @@ namespace Hearthbound.World
         [SerializeField] private float mountainHeight = 200f; // Clustered mountains
         [SerializeField] private AnimationCurve heightCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
         
+        [Header("Noise Parameters")]
+        [Tooltip("Continental mask threshold - controls where mountains appear (0.4-0.6 recommended)")]
+        [Range(0.3f, 0.7f)]
+        [SerializeField] private float continentalThreshold = 0.5f;
+        
+        [Tooltip("Domain warp strength for mountain ranges (100-200 recommended)")]
+        [Range(100f, 250f)]
+        [SerializeField] private float warpStrength = 150f;
+        
+        [Tooltip("Mountain range frequency (0.0005-0.001 recommended)")]
+        [Range(0.0005f, 0.002f)]
+        [SerializeField] private float mountainFrequency = 0.0008f;
+        
+        [Tooltip("Power curve exponent for peak sharpness (1.0-1.5 recommended)")]
+        [Range(1.0f, 2.0f)]
+        [SerializeField] private float peakSharpness = 1.3f;
+        
         [Header("Texture Splatting - Height Thresholds")]
-        [SerializeField] private float waterHeight = 0.1f; // Below this = water/beach
+        [SerializeField] private float waterHeight = 0.05f; // Below this = water/beach (lowered from 0.1 for less water coverage)
         [SerializeField] private float grassHeight = 0.3f; // Plains/grass biome
         [SerializeField] private float rockHeight = 0.6f; // Mountains start
-        [SerializeField] private float snowHeight = 0.8f; // Snow on peaks
+        [SerializeField] private float snowHeight = 0.7f; // Snow on peaks (lowered from 0.8 for more snow coverage)
         [SerializeField] private float steepSlope = 45f;
         
         [Header("Biome Settings")]
@@ -162,6 +179,14 @@ namespace Hearthbound.World
             float scaleX = terrainWidth / (float)width;
             float scaleZ = terrainLength / (float)height;
 
+            // Calculate max possible height once (used for normalization)
+            // Updated to match the new height formula in GetTerrainHeight
+            // Formula: baseHeight (full) + hillHeight (full) + mountainHeight (1.5x)
+            float maxPossibleHeight = baseHeight + hillHeight + mountainHeight * 1.5f;
+            
+            // Debug: Log sample values to verify heights are correct
+            bool loggedSample = false;
+
             for (int z = 0; z < height; z++)
             {
                 for (int x = 0; x < width; x++)
@@ -170,24 +195,73 @@ namespace Hearthbound.World
                     float worldX = x * scaleX;
                     float worldZ = z * scaleZ;
 
-                    // Generate height using noise
+                    // Generate height using noise - returns RAW height values (0 to maxPossibleHeight)
                     float heightValue = NoiseGenerator.GetTerrainHeight(
                         worldX, worldZ, seed,
-                        baseHeight, hillHeight, mountainHeight
+                        baseHeight, hillHeight, mountainHeight,
+                        continentalThreshold, warpStrength, mountainFrequency, peakSharpness
                     );
 
-                    // Normalize to 0-1 range for terrain
-                    heightValue = heightValue / terrainHeight;
+                    // Normalize to 0-1 range using actual max height
+                    // IMPORTANT: Only normalize ONCE here, GetTerrainHeight returns raw values
+                    float normalizedHeight = 0f;
+                    if (maxPossibleHeight > 0f)
+                    {
+                        normalizedHeight = heightValue / maxPossibleHeight;
+                    }
+                    
+                    // Debug logging for first few samples
+                    if (!loggedSample && (x == width / 4 && z == height / 4))
+                    {
+                        // Get continental mask for this point to debug
+                        float sampleWorldX = (width / 4) * scaleX;
+                        float sampleWorldZ = (height / 4) * scaleZ;
+                        float sampleContinentalMask = NoiseGenerator.GetContinentalMask(sampleWorldX, sampleWorldZ, seed);
+                        Debug.Log($"🔍 Height Debug - Raw: {heightValue:F2}, Max: {maxPossibleHeight:F2}, Normalized: {normalizedHeight:F3}");
+                        Debug.Log($"🔍 Continental Mask: {sampleContinentalMask:F3}, Threshold: {continentalThreshold:F3} (mountains appear if mask > threshold)");
+                        loggedSample = true;
+                    }
                     
                     // Apply height curve for more control
-                    heightValue = heightCurve.Evaluate(heightValue);
+                    normalizedHeight = heightCurve.Evaluate(normalizedHeight);
                     
-                    // Clamp to valid range
-                    heightValue = Mathf.Clamp01(heightValue);
+                    // Clamp to valid range (Unity terrain expects 0-1)
+                    normalizedHeight = Mathf.Clamp01(normalizedHeight);
 
-                    heights[z, x] = heightValue;
+                    heights[z, x] = normalizedHeight;
                 }
             }
+
+            // Count terrain distribution for verification
+            int plainsCount = 0;
+            int hillsCount = 0;
+            int mountainsCount = 0;
+            int peaksCount = 0;
+            int totalPixels = width * height;
+            
+            for (int z = 0; z < height; z++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float h = heights[z, x];
+                    if (h < 0.3f)
+                        plainsCount++;
+                    else if (h < 0.6f)
+                        hillsCount++;
+                    else
+                        mountainsCount++;
+                    
+                    if (h > 0.8f)
+                        peaksCount++;
+                }
+            }
+            
+            float plainsPercent = (plainsCount / (float)totalPixels) * 100f;
+            float hillsPercent = (hillsCount / (float)totalPixels) * 100f;
+            float mountainsPercent = (mountainsCount / (float)totalPixels) * 100f;
+            float peaksPercent = (peaksCount / (float)totalPixels) * 100f;
+            
+            Debug.Log($"  📊 Terrain distribution: Plains={plainsPercent:F0}%, Hills={hillsPercent:F0}%, Mountains={mountainsPercent:F0}%, Peaks={peaksPercent:F0}%");
 
             terrainData.SetHeights(0, 0, heights);
             Debug.Log("  ✅ Heightmap generated");
@@ -224,7 +298,6 @@ namespace Hearthbound.World
             }
 
             // Build mapping from biomes to terrain layer indices
-            // This is crucial because GetAllTerrainLayers() only includes biomes with valid terrain layers
             var biomeToLayerIndex = biomeCollection.GetBiomeToLayerIndexMap();
             
             Debug.Log($"  Generated {terrainLayers.Count} terrain layers from {biomeCollection.biomes.Length} biomes");
@@ -238,6 +311,32 @@ namespace Hearthbound.World
 
             float[,,] splatmapData = new float[alphamapWidth, alphamapHeight, numTextures];
 
+            // FIXED: Generate temperature and humidity maps ONCE for the entire terrain
+            // This ensures consistency and allows for proper biome zones
+            Debug.Log("  🔥 Generating temperature map (latitude-based, NOT height-based)...");
+            float[,] temperatureMap = GenerateTemperatureMap(alphamapWidth, alphamapHeight, seed);
+            Debug.Log("  💧 Generating humidity map (noise-based, NOT temperature-coupled)...");
+            float[,] humidityMap = GenerateHumidityMap(alphamapWidth, alphamapHeight, seed);
+            
+            // Log sample temperature/humidity values to verify they vary correctly
+            int sampleX = alphamapWidth / 2;
+            int sampleZ1 = alphamapHeight / 4;  // Edge (should be cooler)
+            int sampleZ2 = alphamapHeight / 2;  // Center (should be warmer)
+            int sampleZ3 = alphamapHeight * 3 / 4; // Edge (should be cooler)
+            
+            float height1 = terrainData.GetHeight(Mathf.RoundToInt(sampleX / (float)alphamapWidth * terrainData.heightmapResolution), 
+                                                  Mathf.RoundToInt(sampleZ1 / (float)alphamapHeight * terrainData.heightmapResolution)) / terrainHeight;
+            float height2 = terrainData.GetHeight(Mathf.RoundToInt(sampleX / (float)alphamapWidth * terrainData.heightmapResolution), 
+                                                  Mathf.RoundToInt(sampleZ2 / (float)alphamapHeight * terrainData.heightmapResolution)) / terrainHeight;
+            float height3 = terrainData.GetHeight(Mathf.RoundToInt(sampleX / (float)alphamapWidth * terrainData.heightmapResolution), 
+                                                  Mathf.RoundToInt(sampleZ3 / (float)alphamapHeight * terrainData.heightmapResolution)) / terrainHeight;
+            
+            Debug.Log($"  📊 Temperature samples (same X={sampleX}, different Z positions):");
+            Debug.Log($"     Z={sampleZ1} (edge): height={height1:F3}, temp={temperatureMap[sampleX, sampleZ1]:F3}, humid={humidityMap[sampleX, sampleZ1]:F3}");
+            Debug.Log($"     Z={sampleZ2} (center): height={height2:F3}, temp={temperatureMap[sampleX, sampleZ2]:F3}, humid={humidityMap[sampleX, sampleZ2]:F3}");
+            Debug.Log($"     Z={sampleZ3} (edge): height={height3:F3}, temp={temperatureMap[sampleX, sampleZ3]:F3}, humid={humidityMap[sampleX, sampleZ3]:F3}");
+            Debug.Log($"  ✅ Notice: Temperature varies by Z position (latitude), not just height!");
+
             for (int z = 0; z < alphamapHeight; z++)
             {
                 for (int x = 0; x < alphamapWidth; x++)
@@ -245,8 +344,6 @@ namespace Hearthbound.World
                     // Get world position for noise sampling
                     float normX = x / (float)alphamapWidth;
                     float normZ = z / (float)alphamapHeight;
-                    float worldX = normX * terrainWidth;
-                    float worldZ = normZ * terrainLength;
                     
                     // Get height at this position (normalized 0-1)
                     float height = terrainData.GetHeight(
@@ -257,45 +354,11 @@ namespace Hearthbound.World
                     // Get slope at this position
                     float slope = terrainData.GetSteepness(normX, normZ);
 
-                    // Get moisture and temperature values
-                    // Per best practices: Temperature drops with altitude, humidity rises near water/low altitude
-                    
-                    // Temperature decreases with height (realistic: higher elevation = lower temperature)
-                    // Base temperature from height: 1.0 at sea level, 0.0 at max height
-                    // Add noise variation for localized temperature variations
-                    float baseTemperature = 1f - height; // Lower height = higher temp, higher height = lower temp
-                    float temperatureNoise = NoiseGenerator.GetBiomeValue(worldX, worldZ, seed + 10000, temperatureFrequency) * 0.2f - 0.1f; // ±0.1 variation
-                    float temperature = baseTemperature + temperatureNoise;
-                    temperature = Mathf.Clamp01(temperature);
-                    
-                    // Humidity: Increases near water/low altitude, affected by temperature and noise patterns
-                    // Per Worldengine/Holdridge model: Humidity capacity decreases with temperature (colder = less moisture capacity)
-                    // Base humidity from noise (rainfall patterns)
-                    float baseHumidity = NoiseGenerator.GetBiomeValue(worldX, worldZ, seed, moistureFrequency);
-                    // Increase humidity at low elevations (near water/sea level) - stronger at very low elevations
-                    float heightHumidityBoost = Mathf.Pow(1f - height, 2f) * 0.4f; // Stronger boost at very low elevations
-                    
-                    // Combine base humidity and height boost
-                    float rawHumidity = baseHumidity + heightHumidityBoost;
-                    rawHumidity = Mathf.Clamp01(rawHumidity);
-                    
-                    // Apply temperature-based humidity transformation (per Worldengine model)
-                    // Colder regions can't hold as much moisture - use gamma-like function
-                    // Function ranges from offset (0.2) to 1.0 as temperature goes from 0 to 1
-                    float gammaOffset = 0.2f; // Minimum humidity multiplier at coldest temperatures
-                    float gammaValue = 1.0f; // Linear curve (can be adjusted for different curves)
-                    
-                    // Calculate temperature-based humidity multiplier
-                    // f(T) = offset + (1 - offset) * T^gamma
-                    // This ensures cold regions have lower max humidity capacity
-                    float tempHumidityMultiplier = gammaOffset + (1f - gammaOffset) * Mathf.Pow(temperature, gammaValue);
-                    
-                    // Apply the temperature-based multiplier to humidity
-                    // This prevents unrealistic combinations like "Polar" + "Superhumid"
-                    float moisture = rawHumidity * tempHumidityMultiplier;
-                    moisture = Mathf.Clamp01(moisture);
+                    // FIXED: Use pre-generated temperature and humidity maps
+                    float temperature = temperatureMap[x, z];
+                    float moisture = humidityMap[x, z];
 
-                    // Calculate biome weights using BiomeCollection (with slope)
+                    // Calculate biome weights using BiomeCollection
                     var biomeWeights = biomeCollection.CalculateBiomeWeights(moisture, temperature, height, slope);
 
                     // Convert biome weights to texture weights using the mapping
@@ -320,60 +383,29 @@ namespace Hearthbound.World
                     }
 
                     // Debug logging: Sample a few pixels to see what's happening
-                    // Include both low and high elevation samples
                     bool isSamplePoint = (x == alphamapWidth / 4 && z == alphamapHeight / 4) || 
                                         (x == alphamapWidth / 2 && z == alphamapHeight / 2) ||
                                         (x == alphamapWidth * 3 / 4 && z == alphamapHeight * 3 / 4);
                     
-                    // Also sample high elevation points to check for Rock/Snow
-                    bool isHighElevationSample = height > 0.5f && (x % (alphamapWidth / 8) == 0 && z % (alphamapHeight / 8) == 0);
-                    
-                    if (isSamplePoint || isHighElevationSample)
+                    if (isSamplePoint)
                     {
                         string biomeInfo = $"Sample at ({x},{z}): height={height:F3}, temp={temperature:F3}, moisture={moisture:F3}\n";
-                        biomeInfo += $"  Biome weights calculated: {biomeWeights.Count}\n";
-                        foreach (var kvp in biomeWeights)
-                        {
-                            if (biomeToLayerIndex.ContainsKey(kvp.Key))
-                            {
-                                int idx = biomeToLayerIndex[kvp.Key];
-                                float normalizedWeight = totalWeight > 0.001f ? kvp.Value / totalWeight : 0f;
-                                biomeInfo += $"  {kvp.Key.biomeName} (idx {idx}): raw={kvp.Value:F6}, normalized={normalizedWeight:F3}, temp={kvp.Key.temperature:F2}, humid={kvp.Key.humidity:F2}\n";
-                            }
-                        }
-                        biomeInfo += $"  Total weight: {totalWeight:F6}\n";
-                        biomeInfo += $"  Final normalized weights: ";
-                        if (totalWeight > 0.001f)
-                        {
-                            for (int i = 0; i < numTextures; i++)
-                            {
-                                if (weights[i] / totalWeight > 0.01f) // Only show weights > 1%
-                                    biomeInfo += $"layer[{i}]={weights[i]/totalWeight:F3} ";
-                            }
-                        }
-                        else
-                        {
-                            biomeInfo += "NONE (using fallback)";
-                        }
-                        // Split into multiple log lines for better readability
-                        Debug.Log(biomeInfo);
-                        // Also log a summary line for quick reference
-                        string summary = $"  Summary: ";
+                        biomeInfo += $"  Biome weights: ";
                         foreach (var kvp in biomeWeights)
                         {
                             if (biomeToLayerIndex.ContainsKey(kvp.Key))
                             {
                                 float normalizedWeight = totalWeight > 0.001f ? kvp.Value / totalWeight : 0f;
-                                if (normalizedWeight > 0.05f) // Only show biomes with >5% weight
+                                if (normalizedWeight > 0.05f)
                                 {
-                                    summary += $"{kvp.Key.biomeName}={normalizedWeight:P0} ";
+                                    biomeInfo += $"{kvp.Key.biomeName}={normalizedWeight:P0} ";
                                 }
                             }
                         }
-                        Debug.Log(summary);
+                        Debug.Log(biomeInfo);
                     }
 
-                    // Normalize weights (as per article: weights don't necessarily sum to 1, but Unity needs normalized)
+                    // Normalize weights (Unity needs weights to sum to 1)
                     if (totalWeight > 0.001f)
                     {
                         for (int i = 0; i < numTextures; i++)
@@ -383,37 +415,111 @@ namespace Hearthbound.World
                     }
                     else
                     {
-                        // No biome weights calculated - fall back to height-based biome selection
-                        if (numTextures >= 5)
-                        {
-                            // Distribute based on height: water at bottom, snow at top
-                            if (height < 0.1f)
-                                weights[0] = 1f; // Water
-                            else if (height < 0.3f)
-                                weights[1] = 1f; // Plains
-                            else if (height < 0.6f)
-                                weights[2] = 1f; // Forest
-                            else if (height < 0.8f)
-                                weights[3] = 1f; // Rock
-                            else
-                                weights[4] = 1f; // Snow
-                        }
-                        else if (numTextures > 0)
-                        {
-                            weights[0] = 1f; // Default to first biome
-                        }
+                        // No biome weights calculated - fall back to first texture
+                        if (numTextures > 0)
+                            weights[0] = 1f;
                     }
 
-                    // Apply weights
+                    // Assign weights to splatmap
                     for (int i = 0; i < numTextures; i++)
                     {
-                        splatmapData[x, z, i] = weights[i];
+                        splatmapData[z, x, i] = weights[i];
                     }
                 }
             }
 
+            // Apply the splatmap to terrain
             terrainData.SetAlphamaps(0, 0, splatmapData);
-            Debug.Log($"  ✅ Splatmap generated using {numTextures} biomes from BiomeCollection");
+            Debug.Log("  ✅ Splatmap applied from BiomeCollection");
+        }
+
+        /// <summary>
+        /// FIXED: Generate temperature map independently from height
+        /// Uses latitude-like gradient + noise for variation
+        /// </summary>
+        private float[,] GenerateTemperatureMap(int width, int height, int seed)
+        {
+            float[,] tempMap = new float[width, height];
+            
+            for (int z = 0; z < height; z++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float normX = x / (float)width;
+                    float normZ = z / (float)height;
+                    float worldX = normX * terrainWidth;
+                    float worldZ = normZ * terrainLength;
+                    
+                    // Latitude-like gradient: warmer at center (equator), cooler at edges (poles)
+                    // This creates horizontal temperature bands
+                    float latitudeGradient = 1f - Mathf.Abs((normZ - 0.5f) * 2f); // 0 at edges, 1 at center
+                    latitudeGradient = Mathf.Pow(latitudeGradient, 1.5f); // Make gradient less linear
+                    
+                    // Add noise variation for local temperature variations
+                    float temperatureNoise = NoiseGenerator.GetBiomeValue(worldX, worldZ, seed + 10000, temperatureFrequency);
+                    
+                    // Combine latitude gradient (70%) and noise (30%)
+                    float temperature = latitudeGradient * 0.7f + temperatureNoise * 0.3f;
+                    
+                    // Optional: Slight altitude influence (higher = cooler, but not dominant)
+                    float terrainHeight = terrainData.GetHeight(
+                        Mathf.RoundToInt(normX * terrainData.heightmapResolution),
+                        Mathf.RoundToInt(normZ * terrainData.heightmapResolution)
+                    ) / this.terrainHeight;
+                    
+                    // Reduce temperature slightly at high elevations (max 20% reduction)
+                    float altitudeEffect = terrainHeight * 0.2f;
+                    temperature = Mathf.Clamp01(temperature - altitudeEffect);
+                    
+                    tempMap[x, z] = temperature;
+                }
+            }
+            
+            return tempMap;
+        }
+
+        /// <summary>
+        /// FIXED: Generate humidity map independently from height
+        /// Uses noise patterns for rainfall + slight height influence
+        /// </summary>
+        private float[,] GenerateHumidityMap(int width, int height, int seed)
+        {
+            float[,] humidMap = new float[width, height];
+            
+            for (int z = 0; z < height; z++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float normX = x / (float)width;
+                    float normZ = z / (float)height;
+                    float worldX = normX * terrainWidth;
+                    float worldZ = normZ * terrainLength;
+                    
+                    // Base humidity from noise (rainfall patterns)
+                    // Use different frequency for more varied patterns
+                    float baseHumidity = NoiseGenerator.GetBiomeValue(worldX, worldZ, seed + 20000, moistureFrequency);
+                    
+                    // Add second noise layer for more complex patterns
+                    float humidityDetail = NoiseGenerator.GetBiomeValue(worldX, worldZ, seed + 30000, moistureFrequency * 2f) * 0.3f;
+                    
+                    // Combine base and detail
+                    float humidity = baseHumidity * 0.7f + humidityDetail;
+                    
+                    // Optional: Slight height influence (lower elevations slightly more humid)
+                    float terrainHeight = terrainData.GetHeight(
+                        Mathf.RoundToInt(normX * terrainData.heightmapResolution),
+                        Mathf.RoundToInt(normZ * terrainData.heightmapResolution)
+                    ) / this.terrainHeight;
+                    
+                    // Boost humidity slightly at low elevations (max 15% boost)
+                    float heightBoost = (1f - terrainHeight) * 0.15f;
+                    humidity = Mathf.Clamp01(humidity + heightBoost);
+                    
+                    humidMap[x, z] = humidity;
+                }
+            }
+            
+            return humidMap;
         }
 
         private void GenerateSplatmapLegacy(int seed)
@@ -975,6 +1081,24 @@ namespace Hearthbound.World
             public float temperature;
             public string biomeName;
         }
+        #endregion
+
+        #region Public Setters (for Preset System)
+        /// <summary>
+        /// Set terrain generation parameters programmatically (for preset system)
+        /// </summary>
+        public void SetBaseHeight(float value) => baseHeight = value;
+        public void SetHillHeight(float value) => hillHeight = value;
+        public void SetMountainHeight(float value) => mountainHeight = value;
+        public void SetHeightCurve(AnimationCurve curve) => heightCurve = curve;
+        public void SetWaterHeight(float value) => waterHeight = value;
+        public void SetGrassHeight(float value) => grassHeight = value;
+        public void SetRockHeight(float value) => rockHeight = value;
+        public void SetSnowHeight(float value) => snowHeight = value;
+        public void SetContinentalThreshold(float value) => continentalThreshold = value;
+        public void SetWarpStrength(float value) => warpStrength = value;
+        public void SetMountainFrequency(float value) => mountainFrequency = value;
+        public void SetPeakSharpness(float value) => peakSharpness = value;
         #endregion
 
         #region Debug

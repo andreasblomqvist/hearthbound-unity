@@ -28,7 +28,7 @@ namespace Hearthbound.World
         [Header("Debug")]
         [Tooltip("Enable detailed logging for biome weight calculations")]
         public bool debugLogging = false;
-        
+
         /// <summary>
         /// Calculate biome weights for a given point
         /// Returns dictionary of biome -> weight (weights are NOT normalized to 1.0)
@@ -128,13 +128,12 @@ namespace Hearthbound.World
             
             foreach (BiomeData biome in biomes)
             {
-                if (biome != null && biome.terrainLayers != null && biome.terrainLayers.Length > 0)
+                if (biome == null) continue;
+                
+                TerrainLayer layer = biome.CreateTerrainLayer();
+                if (layer != null)
                 {
-                    TerrainLayer layer = biome.CreateTerrainLayer();
-                    if (layer != null)
-                    {
-                        layers.Add(layer);
-                    }
+                    layers.Add(layer);
                 }
             }
             
@@ -142,8 +141,8 @@ namespace Hearthbound.World
         }
 
         /// <summary>
-        /// Get a dictionary mapping each biome to its terrain layer index
-        /// This ensures correct mapping when some biomes might not have terrain layers
+        /// Get mapping from BiomeData to terrain layer index
+        /// This is needed because not all biomes may have valid terrain layers
         /// </summary>
         public Dictionary<BiomeData, int> GetBiomeToLayerIndexMap()
         {
@@ -154,44 +153,17 @@ namespace Hearthbound.World
             int layerIndex = 0;
             foreach (BiomeData biome in biomes)
             {
-                if (biome != null && biome.terrainLayers != null && biome.terrainLayers.Length > 0)
+                if (biome == null) continue;
+                
+                // Only include biomes that have valid terrain layers
+                if (biome.terrainLayers != null && biome.terrainLayers.Length > 0)
                 {
-                    TerrainLayer layer = biome.CreateTerrainLayer();
-                    if (layer != null)
-                    {
-                        map[biome] = layerIndex;
-                        layerIndex++;
-                    }
+                    map[biome] = layerIndex;
+                    layerIndex++;
                 }
             }
             
             return map;
-        }
-
-        /// <summary>
-        /// Validate biome collection - check for errors
-        /// </summary>
-        public void Validate()
-        {
-            if (biomes == null || biomes.Length == 0)
-            {
-                Debug.LogWarning($"BiomeCollection '{name}' has no biomes!");
-                return;
-            }
-
-            foreach (BiomeData biome in biomes)
-            {
-                if (biome == null)
-                {
-                    Debug.LogWarning($"BiomeCollection '{name}' contains null biome!");
-                    continue;
-                }
-
-                if (biome.terrainLayers == null || biome.terrainLayers.Length == 0)
-                {
-                    Debug.LogWarning($"Biome '{biome.biomeName}' has no terrain layers!");
-                }
-            }
         }
     }
 }

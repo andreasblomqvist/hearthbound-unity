@@ -54,64 +54,111 @@ namespace Hearthbound.World
         public TerrainLayerData[] terrainLayers = new TerrainLayerData[1];
         
         [Header("Blend Factors")]
-        [Tooltip("How strongly this biome 'claims' its territory - higher = sharper boundaries")]
-        [Range(1f, 10f)]
-        public float blendStrength = 3f;
+        [Tooltip("Height blend factor - lower values create sharper transitions")]
+        [Range(1f, 20f)]
+        public float heightBlendFactor = 5f;
+        
+        [Tooltip("Humidity blend factor - controls how smoothly biome transitions based on humidity")]
+        [Range(1f, 20f)]
+        public float humidityBlendFactor = 5f;
+        
+        [Tooltip("Temperature blend factor - controls how smoothly biome transitions based on temperature")]
+        [Range(1f, 20f)]
+        public float temperatureBlendFactor = 5f;
 
         /// <summary>
-        /// Calculate match score for this biome at given conditions
-        /// Returns a score (higher = better match)
-        /// Uses smooth falloff outside ranges for natural blending
+        /// Check if this biome matches the given conditions using lookup table approach
+        /// Returns match score (0-1) based on how well height, temperature, and humidity fit within ranges
         /// </summary>
-        public float CalculateMatchScore(float height, float temperature, float humidity)
+        public float GetLookupTableMatch(float height, float temperature, float humidity)
         {
-            // Calculate how well each parameter matches its range
-            float heightScore = GetRangeMatchScore(height, heightRange);
-            float tempScore = GetRangeMatchScore(temperature, temperatureRange);
-            float humidScore = GetRangeMatchScore(humidity, humidityRange);
+            // Hard cutoff for water biome: completely exclude if height is too high
+            // This prevents water from appearing on mountains - use very strict threshold
+            string biomeNameLower = biomeName.ToLower();
+            if (biomeNameLower.Contains("water"))
+            {
+                // Water should ONLY appear at very low elevations - hard cutoff
+                if (height > 0.08f) // Stricter than heightRange.y to account for any edge cases
+                {
+                    return 0f; // Completely exclude water above 8% height
+                }
+                // Also check if height is within the actual range
+                if (height > heightRange.y)
+                {
+                    return 0f; // Double-check: exclude water above its max height range
+                }
+            }
             
-            // Combine scores multiplicatively (all must match reasonably well)
-            float combinedScore = heightScore * tempScore * humidScore;
+            // Hard cutoff for snow/rock: completely exclude if height is too low
+            if (biomeNameLower.Contains("snow") || biomeNameLower.Contains("rock") || biomeNameLower.Contains("mountain"))
+            {
+                if (height < heightRange.x)
+                {
+                    return 0f; // Completely exclude snow/rock below their min height
+                }
+            }
             
-            // Apply blend strength to make boundaries sharper or softer
-            // Higher blend strength = sharper boundaries (biome "claims" its territory more strongly)
-            combinedScore = Mathf.Pow(combinedScore, blendStrength);
+            // Check if all factors are within range
+            bool heightMatch = height >= heightRange.x && height <= heightRange.y;
+            bool tempMatch = temperature >= temperatureRange.x && temperature <= temperatureRange.y;
+            bool humidMatch = humidity >= humidityRange.x && humidity <= humidityRange.y;
             
-            return combinedScore;
-        }
-        
-        /// <summary>
-        /// Calculate how well a value matches a range
-        /// Returns 1.0 if within range, smoothly falls off outside range
-        /// </summary>
-        private float GetRangeMatchScore(float value, Vector2 range)
-        {
-            float min = range.x;
-            float max = range.y;
-            
-            // Perfect match if within range
-            if (value >= min && value <= max)
+            // If all factors match, return perfect score
+            if (heightMatch && tempMatch && humidMatch)
             {
                 return 1f;
             }
             
-            // Calculate distance outside range
+            // Calculate how close each factor is to its range (0-1 for each)
+            // For water, height must be perfect - no falloff outside range
+            float heightScore;
+            if (biomeNameLower.Contains("water"))
+            {
+                // Water: hard cutoff - no score if outside height range
+                if (height < heightRange.x || height > heightRange.y)
+                {
+                    return 0f; // No match if outside height range
+                }
+                heightScore = 1f; // Perfect match if within range
+            }
+            else
+            {
+                heightScore = GetRangeScore(height, heightRange.x, heightRange.y);
+            }
+            
+            float tempScore = GetRangeScore(temperature, temperatureRange.x, temperatureRange.y);
+            float humidScore = GetRangeScore(humidity, humidityRange.x, humidityRange.y);
+            
+            // Combine scores (all factors should be favorable)
+            return heightScore * tempScore * humidScore;
+        }
+        
+        /// <summary>
+        /// Get how well a value fits within a range (0-1)
+        /// Returns 1.0 if within range, decreases smoothly outside range
+        /// </summary>
+        private float GetRangeScore(float value, float min, float max)
+        {
+            if (value >= min && value <= max)
+            {
+                return 1f; // Perfect match
+            }
+            
+            // Calculate distance from range
             float distance;
             if (value < min)
             {
                 distance = min - value;
             }
-            else // value > max
+            else
             {
                 distance = value - max;
             }
             
-            // Smooth exponential falloff
-            // The falloff rate determines how quickly the score drops outside the range
-            float falloffRate = 5f; // Higher = faster falloff
-            float score = Mathf.Exp(-distance * falloffRate);
-            
-            return score;
+            // Smooth falloff outside range
+            float rangeSize = max - min;
+            float normalizedDistance = distance / Mathf.Max(0.1f, rangeSize);
+            return Mathf.Exp(-normalizedDistance * 2f); // Exponential falloff
         }
         
         /// <summary>

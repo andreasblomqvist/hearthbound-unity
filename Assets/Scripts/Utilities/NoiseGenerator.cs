@@ -10,6 +10,7 @@ namespace Hearthbound.Utilities
     {
         /// <summary>
         /// Generate 2D Perlin noise with seed support
+        /// Returns values in 0-1 range (Unity's PerlinNoise already returns 0-1)
         /// </summary>
         public static float GetNoise2D(float x, float y, int seed, float frequency = 0.01f)
         {
@@ -17,6 +18,7 @@ namespace Hearthbound.Utilities
             float offsetX = seed * 0.1f;
             float offsetY = seed * 0.2f;
             
+            // Unity's PerlinNoise already returns 0-1, no remapping needed
             return Mathf.PerlinNoise((x + offsetX) * frequency, (y + offsetY) * frequency);
         }
 
@@ -43,57 +45,112 @@ namespace Hearthbound.Utilities
         }
 
         /// <summary>
-        /// Generate height value for terrain
-        /// Combines multiple noise layers for realistic terrain
-        /// Creates flatter terrain with clustered mountains
+        /// Generate mountain range noise using domain warping and ridged noise
+        /// Creates elongated mountain ranges instead of circular blobs
         /// </summary>
-        public static float GetTerrainHeight(float x, float y, int seed, float baseHeight = 50f, float hillHeight = 30f, float mountainHeight = 100f)
+        public static float GetMountainRangeNoise(float x, float y, int seed, float frequency = 0.0008f, float warpStrength = 150f)
         {
-            // Use different seed offsets for each layer to avoid correlation
-            // Add position-based variation to break up patterns
-            float offsetX = (seed % 1000) * 0.01f;
-            float offsetY = ((seed / 1000) % 1000) * 0.01f;
+            // Domain warping to elongate mountains into ranges
+            // Warp more in one direction to create linear ranges
+            float warpX = GetNoise2D(x, y, seed + 100, frequency * 0.5f) * warpStrength;
+            float warpY = GetNoise2D(x, y, seed + 200, frequency * 0.3f) * (warpStrength * 0.6f); // Less warping in Y for elongation
             
-            // Base terrain (large, flat features) - very low frequency for broad, flat areas
-            float baseNoise = GetFractalNoise(x + offsetX, y + offsetY, seed, 4, 0.0005f, 2.0f, 0.5f);
+            // Apply asymmetric warp (more in X direction)
+            float warpedX = x + warpX;
+            float warpedY = y + warpY;
             
-            // Hills (gentle rolling hills) - reduced contribution for flatter terrain
-            float hillNoise = GetFractalNoise(x - offsetX * 2, y - offsetY * 2, seed + 1000, 3, 0.002f, 2.2f, 0.5f);
+            // Generate base noise at warped coordinates
+            float noise = GetFractalNoise(warpedX, warpedY, seed + 3000, 4, frequency, 2.5f, 0.6f);
             
-            // Mountains (clustered mountain regions) - MUCH lower frequency to create large mountain groups
-            // Use lower frequency (0.0003f instead of 0.0015f) to create larger, clustered mountain regions
-            float rotatedX = x * 0.707f - y * 0.707f; // 45 degree rotation
-            float rotatedY = x * 0.707f + y * 0.707f;
-            float mountainNoise = GetFractalNoise(rotatedX + offsetX, rotatedY + offsetY, seed + 2000, 4, 0.0003f, 2.5f, 0.6f);
+            // Apply ridged noise for sharp peaks: abs(noise * 2 - 1)
+            // This creates upward peaks (not inverted/hanging)
+            float ridgedNoise = Mathf.Abs(noise * 2f - 1f);
             
-            // Create mountain clusters: only apply mountains where noise is above a threshold
-            // This creates distinct mountain regions rather than scattered peaks
-            float mountainThreshold = 0.6f; // Only create mountains where noise > 0.6
-            float mountainMask = Mathf.Clamp01((mountainNoise - mountainThreshold) / (1f - mountainThreshold));
-            mountainMask = Mathf.Pow(mountainMask, 1.5f); // Sharpen the transition
-            mountainNoise = mountainMask * mountainNoise; // Apply mask
+            // Return value 0-1
+            return Mathf.Clamp01(ridgedNoise);
+        }
+
+        /// <summary>
+        /// Generate continental mask that defines where mountain ranges should appear
+        /// Uses very low frequency noise for large-scale features
+        /// </summary>
+        public static float GetContinentalMask(float x, float y, int seed)
+        {
+            // Use very low frequency noise (0.0003) for large-scale features
+            // Use fractal noise with 2 octaves for smooth transitions
+            float mask = GetFractalNoise(x, y, seed + 4000, 2, 0.0003f, 2.0f, 0.5f);
             
-            // Add subtle variation for organic feel (reduced)
-            float warpX = GetNoise2D(x, y, seed + 5000, 0.001f) * 30f;
-            float warpY = GetNoise2D(x, y, seed + 6000, 0.001f) * 30f;
-            float warpedNoise = GetFractalNoise(x + warpX, y + warpY, seed + 3000, 2, 0.003f, 2.0f, 0.5f);
+            // Return value 0-1 where high values = mountain regions, low values = plains
+            return mask;
+        }
+
+        /// <summary>
+        /// Generate height value for terrain
+        /// Creates realistic mountain ranges using continental mask and domain warping
+        /// </summary>
+        public static float GetTerrainHeight(float x, float y, int seed, 
+            float baseHeight = 50f, float hillHeight = 30f, float mountainHeight = 100f,
+            float continentalThreshold = 0.5f, float warpStrength = 150f, 
+            float mountainFrequency = 0.0008f, float peakSharpness = 1.3f)
+        {
+            // 1. Generate continental mask (very low frequency) to define where mountains appear
+            float continentalMask = GetContinentalMask(x, y, seed);
             
-            // Combine layers with varied weights
-            float height = baseNoise * baseHeight;
-            height += hillNoise * hillHeight * 0.7f; // Reduced hill contribution for more plains
-            height += mountainNoise * mountainHeight; // Mountains only in clusters
-            height += warpedNoise * (hillHeight * 0.5f); // Subtle variation
+            // 2. Generate base plains using low frequency noise
+            float baseNoise = GetNoise2D(x, y, seed, 0.001f);
+            // FIXED: Use full baseHeight instead of 0.3 multiplier (was making terrain too flat)
+            // baseNoise should now be guaranteed 0-1 range after GetNoise2D fix
+            float plainsHeight = baseNoise * baseHeight; // Base plains everywhere
             
-            // Apply very mild flattening curve: only slightly reduces low areas
-            // This creates more lowlands without making everything disappear
-            float maxPossibleHeight = baseHeight + hillHeight + mountainHeight;
-            float normalizedHeight = height / maxPossibleHeight;
+            // 3. Generate rolling hills using medium frequency fractal noise
+            float hillNoise = GetFractalNoise(x, y, seed + 1000, 3, 0.003f, 2.2f, 0.5f);
+            float hillsHeight = 0f;
+            float hillThreshold = Mathf.Max(0f, continentalThreshold - 0.2f); // Hills appear before mountains
+            if (continentalMask > hillThreshold)
+            {
+                // Add hills where continental mask > threshold
+                // Use full hillHeight (removed 0.5 multiplier) to get proper height variation
+                hillsHeight = hillNoise * hillHeight;
+            }
             
-            // Very gentle curve: only slightly flattens low areas (1.05 instead of 1.2)
-            // This preserves most height variation while creating slightly more lowlands
-            normalizedHeight = Mathf.Pow(normalizedHeight, 1.05f);
-            height = normalizedHeight * maxPossibleHeight;
+            // 4. Generate mountain ranges using domain warping and ridged noise
+            float mountainRangeNoise = GetMountainRangeNoise(x, y, seed, mountainFrequency, warpStrength);
             
+            // DEBUG: Log noise values to diagnose issues (only log once per terrain generation)
+            // Check if this is a sample point (away from origin to avoid edge cases)
+            if (x > 100 && y > 100 && (x % 200 == 0 && y % 200 == 0))
+            {
+                Debug.Log($"🔍 Noise Values Debug - baseNoise={baseNoise:F3}, hillNoise={hillNoise:F3}, mountainNoise={mountainRangeNoise:F3}, continentalMask={continentalMask:F3}");
+                Debug.Log($"🔍 Expected: All values 0.0-1.0. If negative or near 0.0, that's the problem.");
+            }
+            
+            float mountainsHeight = 0f;
+            // Add mountains where continental mask > threshold
+            // NOTE: If continentalThreshold is too high (e.g., 0.5), mountains may not appear
+            // Lower it to 0.3-0.4 in TerrainGenerator Inspector for more mountains
+            if (continentalMask > continentalThreshold)
+            {
+                // Mountains should be MUCH taller than hills
+                mountainsHeight = mountainRangeNoise * mountainHeight * 1.5f;
+            }
+            
+            // 5. Combine layers - RAW height values (not normalized)
+            float height = plainsHeight + hillsHeight + mountainsHeight;
+            
+            // 6. Apply power curve to make peaks sharper
+            // Calculate max possible height for curve application
+            // Updated max calculation: baseHeight (full) + hillHeight (full) + mountainHeight (1.5x)
+            float maxPossibleHeight = baseHeight + hillHeight + mountainHeight * 1.5f;
+            if (maxPossibleHeight > 0f)
+            {
+                // Apply power curve: normalize internally, apply curve, scale back to raw
+                float normalizedHeight = height / maxPossibleHeight;
+                normalizedHeight = Mathf.Pow(normalizedHeight, peakSharpness);
+                height = normalizedHeight * maxPossibleHeight;
+            }
+            
+            // Return RAW height (0 to maxPossibleHeight range, e.g., 0-600)
+            // TerrainGenerator will normalize this to 0-1 for Unity terrain
             return height;
         }
 

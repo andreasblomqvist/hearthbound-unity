@@ -97,9 +97,8 @@ namespace Hearthbound.Editor
             // Create BiomeCollection
             BiomeCollection collection = ScriptableObject.CreateInstance<BiomeCollection>();
             collection.biomes = new BiomeData[] { waterBiome, plainsBiome, forestBiome, rockBiome, snowBiome };
-            collection.globalBlendFactor = 10f; // Matches GitHub default: biomeBlendingFactor = 10
+            collection.globalBlendFactor = 3f; // Default blend factor (range 1-10)
             collection.useGlobalBlendFactor = true;
-            collection.useLookupTable = true; // Use lookup table approach by default
 
             AssetDatabase.CreateAsset(collection, collectionPath);
             AssetDatabase.SaveAssets();
@@ -107,7 +106,7 @@ namespace Hearthbound.Editor
 
             Debug.Log($"✅ Created default biome collection at: {collectionPath}");
             Debug.Log($"   Biomes: {collection.biomes.Length}");
-            Debug.Log($"   Use Lookup Table: {collection.useLookupTable}");
+            Debug.Log($"   Global Blend Factor: {collection.globalBlendFactor}");
             
             // Verify the biomes have lookup table ranges set
             foreach (BiomeData biome in collection.biomes)
@@ -139,9 +138,7 @@ namespace Hearthbound.Editor
             biome.temperature = (temperatureRange.x + temperatureRange.y) * 0.5f; // Center of range
             
             biome.heightMultiplier = heightMultiplier;
-            biome.heightBlendFactor = 5f;
-            biome.humidityBlendFactor = 5f;
-            biome.temperatureBlendFactor = 5f;
+            biome.blendStrength = 3f; // Default blend strength (replaces the three separate blend factors)
 
             // Create terrain layer data
             TerrainLayerData layerData = new TerrainLayerData();

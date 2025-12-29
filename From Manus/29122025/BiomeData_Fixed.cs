@@ -35,15 +35,6 @@ namespace Hearthbound.World
         [Tooltip("Humidity range (0-1) for this biome - biome appears within this humidity range")]
         public Vector2 humidityRange = new Vector2(0f, 1f);
         
-        [Header("Legacy - Distance-Based Matching (for compatibility)")]
-        [Tooltip("Humidity value (0-1) for distance-based matching - deprecated, use humidityRange instead")]
-        [Range(0f, 1f)]
-        public float humidity = 0.5f;
-        
-        [Tooltip("Temperature value (0-1) for distance-based matching - deprecated, use temperatureRange instead")]
-        [Range(0f, 1f)]
-        public float temperature = 0.5f;
-        
         [Header("Height Multiplier")]
         [Tooltip("Multiplier applied to height noise values in this biome")]
         [Range(0.1f, 2.0f)]
@@ -112,19 +103,6 @@ namespace Hearthbound.World
             float score = Mathf.Exp(-distance * falloffRate);
             
             return score;
-        }
-        
-        /// <summary>
-        /// Calculate biome match value (distance-based, lower is better)
-        /// Matches GitHub implementation: temperatureMatch + humidityMatch
-        /// Legacy method for compatibility
-        /// </summary>
-        public float GetBiomeMatchValue(float sampleHumidity, float sampleTemperature)
-        {
-            float temperatureMatch = Mathf.Abs(temperature - sampleTemperature);
-            float humidityMatch = Mathf.Abs(humidity - sampleHumidity);
-            
-            return temperatureMatch + humidityMatch;
         }
 
         /// <summary>
