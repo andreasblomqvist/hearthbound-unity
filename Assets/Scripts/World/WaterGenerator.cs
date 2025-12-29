@@ -14,7 +14,7 @@ namespace Hearthbound.World
     {
         [Header("Water Settings")]
         [SerializeField] private float seaLevel = 0f; // Sea level height (in world units, typically 0 or slightly above)
-        [SerializeField] [Range(0f, 0.2f)] private float seaLevelHeightRatio = 0.05f; // Sea level as ratio of terrain height (0.05 = 5% of max height)
+        [SerializeField] [Range(0f, 0.2f)] private float seaLevelHeightRatio = 0.02f; // Sea level as ratio of terrain height (0.02 = 2% of max height) - lowered to prevent everything being underwater
         [SerializeField] private Material waterMaterial;
         [SerializeField] private bool generateOnTerrainGenerate = true;
         

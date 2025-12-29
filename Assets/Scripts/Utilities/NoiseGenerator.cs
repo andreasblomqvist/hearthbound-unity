@@ -80,18 +80,18 @@ namespace Hearthbound.Utilities
             
             // Combine layers with varied weights
             float height = baseNoise * baseHeight;
-            height += hillNoise * hillHeight * 0.6f; // Slightly reduced hill contribution for more plains
+            height += hillNoise * hillHeight * 0.7f; // Reduced hill contribution for more plains
             height += mountainNoise * mountainHeight; // Mountains only in clusters
-            height += warpedNoise * (hillHeight * 0.4f); // Subtle variation
+            height += warpedNoise * (hillHeight * 0.5f); // Subtle variation
             
-            // Apply mild flattening curve: keeps most terrain lower but preserves variation
-            // Use a gentler curve to flatten lowlands without making everything disappear
+            // Apply very mild flattening curve: only slightly reduces low areas
+            // This creates more lowlands without making everything disappear
             float maxPossibleHeight = baseHeight + hillHeight + mountainHeight;
             float normalizedHeight = height / maxPossibleHeight;
             
-            // Gentle curve: flattens low areas slightly, preserves high areas
-            // Curve: y = x^1.2 instead of x^1.8 (much gentler)
-            normalizedHeight = Mathf.Pow(normalizedHeight, 1.2f);
+            // Very gentle curve: only slightly flattens low areas (1.05 instead of 1.2)
+            // This preserves most height variation while creating slightly more lowlands
+            normalizedHeight = Mathf.Pow(normalizedHeight, 1.05f);
             height = normalizedHeight * maxPossibleHeight;
             
             return height;

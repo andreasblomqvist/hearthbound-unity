@@ -25,9 +25,9 @@ namespace Hearthbound.World
         [SerializeField] private int heightmapResolution = 513;
         
         [Header("Height Generation")]
-        [SerializeField] private float baseHeight = 60f; // Base terrain height (plains/lowlands)
-        [SerializeField] private float hillHeight = 50f; // Gentle hills for variation
-        [SerializeField] private float mountainHeight = 180f; // Clustered mountains
+        [SerializeField] private float baseHeight = 80f; // Base terrain height (plains/lowlands) - increased to prevent everything being underwater
+        [SerializeField] private float hillHeight = 60f; // Gentle hills for variation
+        [SerializeField] private float mountainHeight = 200f; // Clustered mountains
         [SerializeField] private AnimationCurve heightCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
         
         [Header("Texture Splatting - Height Thresholds")]
