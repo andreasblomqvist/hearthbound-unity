@@ -31,9 +31,9 @@ namespace Hearthbound.World
         [SerializeField] private AnimationCurve heightCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
         
         [Header("Noise Parameters")]
-        [Tooltip("Continental mask threshold - controls where mountains appear (0.4-0.6 recommended)")]
-        [Range(0.3f, 0.7f)]
-        [SerializeField] private float continentalThreshold = 0.5f;
+        [Tooltip("Continental mask threshold - controls where mountains appear (0.3 recommended for better terrain distribution)")]
+        [Range(0.2f, 0.7f)]
+        [SerializeField] private float continentalThreshold = 0.3f;
         
         [Tooltip("Domain warp strength for mountain ranges (100-200 recommended)")]
         [Range(100f, 250f)]
@@ -208,6 +208,8 @@ namespace Hearthbound.World
                     if (maxPossibleHeight > 0f)
                     {
                         normalizedHeight = heightValue / maxPossibleHeight;
+                        // Apply power curve to make peaks sharper (moved from GetTerrainHeight)
+                        normalizedHeight = Mathf.Pow(normalizedHeight, peakSharpness);
                     }
                     
                     // Debug logging for first few samples
@@ -218,7 +220,32 @@ namespace Hearthbound.World
                         float sampleWorldZ = (height / 4) * scaleZ;
                         float sampleContinentalMask = NoiseGenerator.GetContinentalMask(sampleWorldX, sampleWorldZ, seed);
                         Debug.Log($"🔍 Height Debug - Raw: {heightValue:F2}, Max: {maxPossibleHeight:F2}, Normalized: {normalizedHeight:F3}");
-                        Debug.Log($"🔍 Continental Mask: {sampleContinentalMask:F3}, Threshold: {continentalThreshold:F3} (mountains appear if mask > threshold)");
+                        Debug.Log($"🔍 Continental Mask: {sampleContinentalMask:F3}, Threshold: {continentalThreshold:F3}");
+                        
+                        // Call GetTerrainHeight again with debug to see what's happening
+                        // We'll manually break down the height calculation to match what GetTerrainHeight does
+                        float testBaseNoise = NoiseGenerator.GetNoise2D(sampleWorldX, sampleWorldZ, seed, 0.001f);
+                        float testHillNoise = NoiseGenerator.GetFractalNoise(sampleWorldX, sampleWorldZ, seed + 1000, 3, 0.003f, 2.2f, 0.5f);
+                        float testMountainNoise = NoiseGenerator.GetMountainRangeNoise(sampleWorldX, sampleWorldZ, seed, mountainFrequency, warpStrength);
+                        float testHillMask = Mathf.Max(0.5f, sampleContinentalMask);
+                        float testMountainMask = Mathf.Max(0.3f, sampleContinentalMask * 0.8f);
+                        float testPlainsHeight = Mathf.Max(testBaseNoise * baseHeight, baseHeight * 0.3f);
+                        float testHillsHeight = testHillNoise * hillHeight * testHillMask;
+                        float testMountainsHeight = testMountainNoise * mountainHeight * 1.5f * testMountainMask;
+                        float testTotal = testPlainsHeight + testHillsHeight + testMountainsHeight;
+                        
+                        Debug.Log($"🔍 [NoiseGenerator] Called with world ({sampleWorldX:F1}, {sampleWorldZ:F1}):");
+                        Debug.Log($"   baseNoise={testBaseNoise:F3}, hillNoise={testHillNoise:F3}, mountainNoise={testMountainNoise:F3}");
+                        Debug.Log($"   continentalMask={sampleContinentalMask:F3}, hillMask={testHillMask:F3}, mountainMask={testMountainMask:F3}");
+                        Debug.Log($"   plains={testPlainsHeight:F2}, hills={testHillsHeight:F2}, mountains={testMountainsHeight:F2}, TOTAL={testTotal:F2}");
+                        
+                        Debug.Log($"🔍 [TerrainGenerator] DETAILED Height Breakdown at pixel ({x}, {z}) / world ({sampleWorldX:F1}, {sampleWorldZ:F1}):");
+                        Debug.Log($"   baseNoise={testBaseNoise:F3}, hillNoise={testHillNoise:F3}, mountainNoise={testMountainNoise:F3}");
+                        Debug.Log($"   hillMask={testHillMask:F3}, mountainMask={testMountainMask:F3}");
+                        Debug.Log($"   plains={testPlainsHeight:F2}, hills={testHillsHeight:F2}, mountains={testMountainsHeight:F2}");
+                        Debug.Log($"   Manual TOTAL={testTotal:F2} vs GetTerrainHeight Raw={heightValue:F2} (should match!)");
+                        Debug.Log($"   After normalization: {normalizedHeight:F3} (before heightCurve)");
+                        Debug.Log($"   Height Params: baseHeight={baseHeight:F1}, hillHeight={hillHeight:F1}, mountainHeight={mountainHeight:F1}, peakSharpness={peakSharpness:F2}");
                         loggedSample = true;
                     }
                     

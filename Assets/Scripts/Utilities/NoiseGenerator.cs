@@ -9,14 +9,30 @@ namespace Hearthbound.Utilities
     public static class NoiseGenerator
     {
         /// <summary>
+        /// Improved seed hashing function for better distribution across Perlin noise space
+        /// Uses prime numbers and bit manipulation for better randomization
+        /// </summary>
+        private static float HashSeed(int seed, int offset)
+        {
+            // Use prime numbers and bit operations for better distribution
+            uint hash = (uint)(seed + offset);
+            hash ^= hash << 13;
+            hash ^= hash >> 17;
+            hash ^= hash << 5;
+            // Convert to float in a good range for Perlin noise offsets
+            return (hash % 1000000) / 10000f; // Range: 0-100
+        }
+
+        /// <summary>
         /// Generate 2D Perlin noise with seed support
         /// Returns values in 0-1 range (Unity's PerlinNoise already returns 0-1)
         /// </summary>
         public static float GetNoise2D(float x, float y, int seed, float frequency = 0.01f)
         {
-            // Offset based on seed for reproducibility
-            float offsetX = seed * 0.1f;
-            float offsetY = seed * 0.2f;
+            // Use improved seed hashing for better distribution across Perlin noise space
+            // This ensures different seeds sample different regions, avoiding "bad" regions
+            float offsetX = HashSeed(seed, 0);
+            float offsetY = HashSeed(seed, 1);
             
             // Unity's PerlinNoise already returns 0-1, no remapping needed
             return Mathf.PerlinNoise((x + offsetX) * frequency, (y + offsetY) * frequency);
@@ -100,56 +116,53 @@ namespace Hearthbound.Utilities
             float baseNoise = GetNoise2D(x, y, seed, 0.001f);
             // FIXED: Use full baseHeight instead of 0.3 multiplier (was making terrain too flat)
             // baseNoise should now be guaranteed 0-1 range after GetNoise2D fix
-            float plainsHeight = baseNoise * baseHeight; // Base plains everywhere
+            // Ensure base terrain has minimum height to prevent everything being underwater
+            float plainsHeight = Mathf.Max(baseNoise * baseHeight, baseHeight * 0.3f); // Minimum 30% of baseHeight everywhere
+            
+            // DEBUG: Log noise values early to diagnose (only at one specific point)
+            if (x > 100 && y > 100 && x < 250 && y < 250 && (x == 200 && y == 200))
+            {
+                Debug.Log($"🔍 EARLY Noise Debug - baseNoise={baseNoise:F3}, continentalMask={continentalMask:F3}");
+            }
             
             // 3. Generate rolling hills using medium frequency fractal noise
             float hillNoise = GetFractalNoise(x, y, seed + 1000, 3, 0.003f, 2.2f, 0.5f);
-            float hillsHeight = 0f;
-            float hillThreshold = Mathf.Max(0f, continentalThreshold - 0.2f); // Hills appear before mountains
-            if (continentalMask > hillThreshold)
-            {
-                // Add hills where continental mask > threshold
-                // Use full hillHeight (removed 0.5 multiplier) to get proper height variation
-                hillsHeight = hillNoise * hillHeight;
-            }
+            // TEMPORARY: Make masks extremely permissive to ensure terrain appears
+            // Use continental mask as a gentle multiplier, not a strict filter
+            float hillMask = Mathf.Max(0.5f, continentalMask); // Minimum 50% strength, up to 100% based on mask
+            float hillsHeight = hillNoise * hillHeight * hillMask;
             
             // 4. Generate mountain ranges using domain warping and ridged noise
             float mountainRangeNoise = GetMountainRangeNoise(x, y, seed, mountainFrequency, warpStrength);
             
-            // DEBUG: Log noise values to diagnose issues (only log once per terrain generation)
-            // Check if this is a sample point (away from origin to avoid edge cases)
-            if (x > 100 && y > 100 && (x % 200 == 0 && y % 200 == 0))
-            {
-                Debug.Log($"🔍 Noise Values Debug - baseNoise={baseNoise:F3}, hillNoise={hillNoise:F3}, mountainNoise={mountainRangeNoise:F3}, continentalMask={continentalMask:F3}");
-                Debug.Log($"🔍 Expected: All values 0.0-1.0. If negative or near 0.0, that's the problem.");
-            }
-            
-            float mountainsHeight = 0f;
-            // Add mountains where continental mask > threshold
-            // NOTE: If continentalThreshold is too high (e.g., 0.5), mountains may not appear
-            // Lower it to 0.3-0.4 in TerrainGenerator Inspector for more mountains
-            if (continentalMask > continentalThreshold)
-            {
-                // Mountains should be MUCH taller than hills
-                mountainsHeight = mountainRangeNoise * mountainHeight * 1.5f;
-            }
+            // TEMPORARY: Make masks extremely permissive to ensure terrain appears
+            // Use continental mask as a gentle multiplier, not a strict filter
+            float mountainMask = Mathf.Max(0.3f, continentalMask * 0.8f); // Minimum 30% strength, up to 80% based on mask
+            float mountainsHeight = mountainRangeNoise * mountainHeight * 1.5f * mountainMask;
             
             // 5. Combine layers - RAW height values (not normalized)
             float height = plainsHeight + hillsHeight + mountainsHeight;
             
-            // 6. Apply power curve to make peaks sharper
-            // Calculate max possible height for curve application
-            // Updated max calculation: baseHeight (full) + hillHeight (full) + mountainHeight (1.5x)
-            float maxPossibleHeight = baseHeight + hillHeight + mountainHeight * 1.5f;
-            if (maxPossibleHeight > 0f)
+            // DEBUG: Log detailed height breakdown (only log once per terrain generation)
+            // Use a simple coordinate check that will definitely match during terrain generation
+            // Check for a specific world coordinate that corresponds to the sample point in TerrainGenerator
+            // TerrainGenerator samples at (width/4, height/4), which for 513x513 = (128, 128)
+            // World coordinates: 128 * (1000/513) ≈ 249.5
+            if (Mathf.Abs(x - 250f) < 2f && Mathf.Abs(y - 250f) < 2f)
             {
-                // Apply power curve: normalize internally, apply curve, scale back to raw
-                float normalizedHeight = height / maxPossibleHeight;
-                normalizedHeight = Mathf.Pow(normalizedHeight, peakSharpness);
-                height = normalizedHeight * maxPossibleHeight;
+                Debug.Log($"🔍 [NoiseGenerator] FULL Noise Values Debug at world ({x:F1}, {y:F1}):");
+                Debug.Log($"   baseNoise={baseNoise:F3}, hillNoise={hillNoise:F3}, mountainNoise={mountainRangeNoise:F3}");
+                Debug.Log($"   continentalMask={continentalMask:F3}, hillMask={hillMask:F3}, mountainMask={mountainMask:F3}");
+                Debug.Log($"🔍 [NoiseGenerator] Height Components:");
+                Debug.Log($"   plains={plainsHeight:F2}, hills={hillsHeight:F2}, mountains={mountainsHeight:F2}, TOTAL={height:F2}");
+                Debug.Log($"   Height Params: baseHeight={baseHeight:F1}, hillHeight={hillHeight:F1}, mountainHeight={mountainHeight:F1}");
             }
             
-            // Return RAW height (0 to maxPossibleHeight range, e.g., 0-600)
+            // NOTE: Power curve (peakSharpness) is now applied in TerrainGenerator after normalization
+            // This prevents the power curve from reducing already-low height values
+            // The power curve should be applied to normalized 0-1 values, not raw height values
+            
+            // Return RAW height (0 to maxPossibleHeight range, e.g., 0-1450)
             // TerrainGenerator will normalize this to 0-1 for Unity terrain
             return height;
         }

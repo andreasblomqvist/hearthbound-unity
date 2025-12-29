@@ -18,6 +18,6 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 6c261c17d04bd17439d56b61cc889699, type: 2}
   - {fileID: 11400000, guid: d89e91802efce9a4e80131bc7d30268d, type: 2}
   - {fileID: 11400000, guid: e65e5bd6a366968469113645d133a0ab, type: 2}
-  globalBlendFactor: 10
+  globalBlendFactor: 3
   useGlobalBlendFactor: 1
-  useLookupTable: 1
+  debugLogging: 0

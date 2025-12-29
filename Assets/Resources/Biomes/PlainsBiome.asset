@@ -23,6 +23,4 @@ MonoBehaviour:
   - diffuseTexture: {fileID: 0}
     tileSize: {x: 15, y: 15}
     color: {r: 0.6, g: 0.7, b: 0.2, a: 1}
-  heightBlendFactor: 5
-  humidityBlendFactor: 5
-  temperatureBlendFactor: 5
+  blendStrength: 3
