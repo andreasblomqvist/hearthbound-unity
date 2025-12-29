@@ -54,7 +54,7 @@ MonoBehaviour:
   grassHeight: 0.3
   rockHeight: 0.6
   snowHeight: 0.68
-  continentalThreshold: 0.65
+  continentalThreshold: 0.3
   warpStrength: 200
   mountainFrequency: 0.0008
   peakSharpness: 1.3

@@ -35,6 +35,10 @@ namespace Hearthbound.World
         [Range(0.2f, 0.7f)]
         [SerializeField] private float continentalThreshold = 0.3f;
         
+        [Tooltip("Continental mask frequency - controls size of mountain regions (0.0002-0.0005 recommended, lower = larger regions)")]
+        [Range(0.0001f, 0.001f)]
+        [SerializeField] private float continentalMaskFrequency = 0.0003f;
+        
         [Tooltip("Domain warp strength for mountain ranges (100-200 recommended)")]
         [Range(100f, 250f)]
         [SerializeField] private float warpStrength = 150f;
@@ -46,6 +50,19 @@ namespace Hearthbound.World
         [Tooltip("Power curve exponent for peak sharpness (1.0-1.5 recommended)")]
         [Range(1.0f, 2.0f)]
         [SerializeField] private float peakSharpness = 1.3f;
+        
+        [Header("Rivers and Lakes")]
+        [Tooltip("River width threshold - Lower = narrower rivers, Higher = wider rivers")]
+        [Range(0.05f, 0.5f)]
+        [SerializeField] private float riverWidth = 0.25f;
+        
+        [Tooltip("How deep rivers carve into terrain (in world units)")]
+        [Range(10f, 500f)]
+        [SerializeField] private float riverDepth = 40f;
+        
+        [Tooltip("How deep lake basins are (in world units)")]
+        [Range(10f, 500f)]
+        [SerializeField] private float lakeDepth = 30f;
         
         [Header("Texture Splatting - Height Thresholds")]
         [SerializeField] private float waterHeight = 0.05f; // Below this = water/beach (lowered from 0.1 for less water coverage)
@@ -170,6 +187,7 @@ namespace Hearthbound.World
         private void GenerateHeightmap(int seed)
         {
             Debug.Log("  Generating heightmap...");
+            Debug.Log($"  🌊 Water Carving Params: riverWidth={riverWidth:F3}, riverDepth={riverDepth:F1}, lakeDepth={lakeDepth:F1}");
             
             int width = terrainData.heightmapResolution;
             int height = terrainData.heightmapResolution;
@@ -179,13 +197,22 @@ namespace Hearthbound.World
             float scaleX = terrainWidth / (float)width;
             float scaleZ = terrainLength / (float)height;
 
-            // Calculate max possible height once (used for normalization)
+            // Calculate theoretical max possible height (before water carving)
             // Updated to match the new height formula in GetTerrainHeight
             // Formula: baseHeight (full) + hillHeight (full) + mountainHeight (1.5x)
-            float maxPossibleHeight = baseHeight + hillHeight + mountainHeight * 1.5f;
+            float theoreticalMaxHeight = (baseHeight + hillHeight + mountainHeight * 1.5f) * 0.65f;
+            
+            // Account for maximum possible water carving in maxPossibleHeight calculation
+            // This ensures normalization doesn't change when river/lake depth changes
+            float maxWaterCarving = Mathf.Max(riverDepth, lakeDepth);
+            float maxPossibleHeight = theoreticalMaxHeight; // Use theoretical max, carving happens after
             
             // Debug: Log sample values to verify heights are correct
             bool loggedSample = false;
+            
+            // Track actual min/max for debugging
+            float actualMinHeight = float.MaxValue;
+            float actualMaxHeight = float.MinValue;
 
             for (int z = 0; z < height; z++)
             {
@@ -199,10 +226,16 @@ namespace Hearthbound.World
                     float heightValue = NoiseGenerator.GetTerrainHeight(
                         worldX, worldZ, seed,
                         baseHeight, hillHeight, mountainHeight,
-                        continentalThreshold, warpStrength, mountainFrequency, peakSharpness
+                        continentalThreshold, warpStrength, mountainFrequency, peakSharpness, continentalMaskFrequency,
+                        riverWidth, riverDepth, lakeDepth
                     );
+                    
+                    // Track actual min/max
+                    actualMinHeight = Mathf.Min(actualMinHeight, heightValue);
+                    actualMaxHeight = Mathf.Max(actualMaxHeight, heightValue);
 
-                    // Normalize to 0-1 range using actual max height
+                    // Normalize to 0-1 range using theoretical max height (before carving)
+                    // This ensures mountains don't change height when river depth changes
                     // IMPORTANT: Only normalize ONCE here, GetTerrainHeight returns raw values
                     float normalizedHeight = 0f;
                     if (maxPossibleHeight > 0f)
@@ -221,7 +254,7 @@ namespace Hearthbound.World
                         // Get continental mask for this point to debug
                         float sampleWorldX = (width / 4) * scaleX;
                         float sampleWorldZ = (height / 4) * scaleZ;
-                        float sampleContinentalMask = NoiseGenerator.GetContinentalMask(sampleWorldX, sampleWorldZ, seed);
+                        float sampleContinentalMask = NoiseGenerator.GetContinentalMask(sampleWorldX, sampleWorldZ, seed, continentalMaskFrequency);
                         Debug.Log($"🔍 Height Debug - Raw: {heightValue:F2}, Max: {maxPossibleHeight:F2}, Normalized: {normalizedHeight:F3}");
                         Debug.Log($"🔍 Continental Mask: {sampleContinentalMask:F3}, Threshold: {continentalThreshold:F3}");
                         
@@ -246,9 +279,23 @@ namespace Hearthbound.World
                         Debug.Log($"   baseNoise={testBaseNoise:F3}, hillNoise={testHillNoise:F3}, mountainNoise={testMountainNoise:F3}");
                         Debug.Log($"   hillMask={testHillMask:F3}, mountainMask={testMountainMask:F3}");
                         Debug.Log($"   plains={testPlainsHeight:F2}, hills={testHillsHeight:F2}, mountains={testMountainsHeight:F2}");
-                        Debug.Log($"   Manual TOTAL={testTotal:F2} vs GetTerrainHeight Raw={heightValue:F2} (should match!)");
+                        // Add river and lake information
+                        float sampleRiverNoise = NoiseGenerator.GetRiverNoise(sampleWorldX, sampleWorldZ, seed);
+                        float sampleLakeNoise = NoiseGenerator.GetLakeNoise(sampleWorldX, sampleWorldZ, seed);
+                        float sampleWaterCarving = NoiseGenerator.GetWaterCarving(sampleWorldX, sampleWorldZ, seed, riverWidth, riverDepth, lakeDepth);
+                        float testTotalAfterCarving = Mathf.Max(0f, testTotal - sampleWaterCarving);
+                        
+                        Debug.Log($"   Manual TOTAL (before carving)={testTotal:F2}, Manual TOTAL (after carving)={testTotalAfterCarving:F2}");
+                        Debug.Log($"   GetTerrainHeight Raw (after carving)={heightValue:F2} (should match Manual TOTAL after carving)");
                         Debug.Log($"   After normalization: {normalizedHeight:F3} (before heightCurve)");
                         Debug.Log($"   Height Params: baseHeight={baseHeight:F1}, hillHeight={hillHeight:F1}, mountainHeight={mountainHeight:F1}, peakSharpness={peakSharpness:F2}");
+                        
+                        Debug.Log($"🌊 [TerrainGenerator] Rivers and Lakes at world ({sampleWorldX:F1}, {sampleWorldZ:F1}):");
+                        Debug.Log($"   riverNoise={sampleRiverNoise:F3} (threshold: {riverWidth:F3}, {(sampleRiverNoise < riverWidth ? "RIVER" : "no river")})");
+                        Debug.Log($"   lakeNoise={sampleLakeNoise:F3} (threshold: 0.3, {(sampleLakeNoise < 0.3f ? "LAKE" : "no lake")})");
+                        Debug.Log($"   waterCarving={sampleWaterCarving:F2}, heightBeforeCarving={testTotal:F2}, heightAfterCarving={testTotalAfterCarving:F2}");
+                        Debug.Log($"   Water Params: riverWidth={riverWidth:F3}, riverDepth={riverDepth:F1}, lakeDepth={lakeDepth:F1}");
+                        
                         loggedSample = true;
                     }
                     
@@ -261,6 +308,9 @@ namespace Hearthbound.World
                     heights[z, x] = normalizedHeight;
                 }
             }
+            
+            // Log actual height range for debugging
+            Debug.Log($"  📊 Actual Height Range: Min={actualMinHeight:F2}, Max={actualMaxHeight:F2}, Theoretical Max={maxPossibleHeight:F2}");
 
             // Count terrain distribution for verification
             // Adjusted thresholds to match actual height distribution (normalized heights are typically 0.15-0.3)
@@ -393,6 +443,44 @@ namespace Hearthbound.World
 
                     // Calculate biome weights using BiomeCollection
                     var biomeWeights = biomeCollection.CalculateBiomeWeights(moisture, temperature, height, slope);
+
+                    // Force water biome for areas below water threshold (rivers/lakes)
+                    // BUT exclude mountain areas - water shouldn't climb up mountains
+                    // Check if this is a mountain area: high slope OR height above rock threshold
+                    bool isMountainArea = slope > steepSlope || height > rockHeight;
+                    
+                    if (height < waterHeight && !isMountainArea)
+                    {
+                        // Find water biome and give it high priority
+                        BiomeData waterBiome = null;
+                        foreach (var kvp in biomeWeights)
+                        {
+                            if (kvp.Key != null && kvp.Key.biomeName == "Water")
+                            {
+                                waterBiome = kvp.Key;
+                                break;
+                            }
+                        }
+                        
+                        if (waterBiome != null)
+                        {
+                            // Set water biome weight to 1.0 for areas below water threshold (but not mountains)
+                            biomeWeights[waterBiome] = 1.0f;
+                            // Reduce other biome weights
+                            var keysToReduce = new List<BiomeData>();
+                            foreach (var kvp in biomeWeights)
+                            {
+                                if (kvp.Key != waterBiome)
+                                {
+                                    keysToReduce.Add(kvp.Key);
+                                }
+                            }
+                            foreach (var otherBiome in keysToReduce)
+                            {
+                                biomeWeights[otherBiome] *= 0.1f; // Reduce other biomes
+                            }
+                        }
+                    }
 
                     // Convert biome weights to texture weights using the mapping
                     float[] weights = new float[numTextures];
@@ -1129,6 +1217,7 @@ namespace Hearthbound.World
         public void SetRockHeight(float value) => rockHeight = value;
         public void SetSnowHeight(float value) => snowHeight = value;
         public void SetContinentalThreshold(float value) => continentalThreshold = value;
+        public void SetContinentalMaskFrequency(float value) => continentalMaskFrequency = value;
         public void SetWarpStrength(float value) => warpStrength = value;
         public void SetMountainFrequency(float value) => mountainFrequency = value;
         public void SetPeakSharpness(float value) => peakSharpness = value;

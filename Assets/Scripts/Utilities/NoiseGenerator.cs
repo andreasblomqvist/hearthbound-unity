@@ -78,9 +78,12 @@ namespace Hearthbound.Utilities
             // Generate base noise at warped coordinates
             float noise = GetFractalNoise(warpedX, warpedY, seed + 3000, 4, frequency, 2.5f, 0.6f);
             
-            // Apply ridged noise for sharp peaks: abs(noise * 2 - 1)
-            // This creates upward peaks (not inverted/hanging)
-            float ridgedNoise = Mathf.Abs(noise * 2f - 1f);
+            // Apply ridged noise for sharp peaks: 1 - abs(noise * 2 - 1)
+            // This inverts it so peaks are HIGH (1.0) and valleys are LOW (0.0)
+            float ridgedNoise = 1f - Mathf.Abs(noise * 2f - 1f);
+            
+            // Add power curve for sharper peaks
+            ridgedNoise = Mathf.Pow(ridgedNoise, 1.5f);
             
             // Return value 0-1
             return Mathf.Clamp01(ridgedNoise);
@@ -90,11 +93,11 @@ namespace Hearthbound.Utilities
         /// Generate continental mask that defines where mountain ranges should appear
         /// Uses very low frequency noise for large-scale features
         /// </summary>
-        public static float GetContinentalMask(float x, float y, int seed)
+        public static float GetContinentalMask(float x, float y, int seed, float frequency = 0.0003f)
         {
-            // Use very low frequency noise (0.0003) for large-scale features
+            // Use very low frequency noise for large-scale features (default 0.0003)
             // Use fractal noise with 2 octaves for smooth transitions
-            float mask = GetFractalNoise(x, y, seed + 4000, 2, 0.0003f, 2.0f, 0.5f);
+            float mask = GetFractalNoise(x, y, seed + 4000, 2, frequency, 2.0f, 0.5f);
             
             // Return value 0-1 where high values = mountain regions, low values = plains
             return mask;
@@ -105,12 +108,13 @@ namespace Hearthbound.Utilities
         /// Creates realistic mountain ranges using continental mask and domain warping
         /// </summary>
         public static float GetTerrainHeight(float x, float y, int seed, 
-            float baseHeight = 50f, float hillHeight = 30f, float mountainHeight = 100f,
-            float continentalThreshold = 0.5f, float warpStrength = 150f, 
-            float mountainFrequency = 0.0008f, float peakSharpness = 1.3f)
+            float baseHeight, float hillHeight, float mountainHeight,
+            float continentalThreshold, float warpStrength, 
+            float mountainFrequency, float peakSharpness, float continentalMaskFrequency,
+            float riverWidth, float riverDepth, float lakeDepth)
         {
             // 1. Generate continental mask (very low frequency) to define where mountains appear
-            float continentalMask = GetContinentalMask(x, y, seed);
+            float continentalMask = GetContinentalMask(x, y, seed, continentalMaskFrequency);
             
             // 2. Generate base plains using low frequency noise
             float baseNoise = GetNoise2D(x, y, seed, 0.001f);
@@ -127,21 +131,35 @@ namespace Hearthbound.Utilities
             
             // 3. Generate rolling hills using medium frequency fractal noise
             float hillNoise = GetFractalNoise(x, y, seed + 1000, 3, 0.003f, 2.2f, 0.5f);
-            // Make masks permissive to ensure terrain appears
-            // Use continental mask as a gentle multiplier, not a strict filter
-            float hillMask = Mathf.Max(0.7f, continentalMask); // Minimum 70% strength, up to 100% based on mask
+            // Use smooth multipliers based on continental mask, respecting thresholds
+            // Hills appear gradually starting at mask 0.3, full strength at mask 0.7
+            float hillMask = Mathf.Clamp01((continentalMask - 0.3f) * 2.5f);
             float hillsHeight = hillNoise * hillHeight * hillMask;
             
             // 4. Generate mountain ranges using domain warping and ridged noise
             float mountainRangeNoise = GetMountainRangeNoise(x, y, seed, mountainFrequency, warpStrength);
             
-            // Make masks permissive to ensure terrain appears
-            // Use continental mask as a gentle multiplier, not a strict filter
-            float mountainMask = Mathf.Max(0.5f, continentalMask * 0.9f); // Minimum 50% strength, up to 90% based on mask
+            // Use smooth multipliers based on continental mask, respecting continental threshold
+            // Mountains appear gradually starting at threshold, full strength at threshold + 0.33
+            float mountainMask = Mathf.Clamp01((continentalMask - continentalThreshold) * 3.0f);
             float mountainsHeight = mountainRangeNoise * mountainHeight * 1.5f * mountainMask;
             
             // 5. Combine layers - RAW height values (not normalized)
             float height = plainsHeight + hillsHeight + mountainsHeight;
+            
+            // 6. Apply water carving (rivers and lakes)
+            // Reduce carving in mountain areas to prevent affecting mountain heights
+            float riverNoise = GetRiverNoise(x, y, seed);
+            float lakeNoise = GetLakeNoise(x, y, seed);
+            float waterCarving = GetWaterCarving(x, y, seed, riverWidth, riverDepth, lakeDepth);
+            
+            // Reduce water carving in mountain areas (mountains shouldn't have rivers/lakes carved into them)
+            // Use mountainMask to reduce carving - full carving in plains, reduced in hills, minimal in mountains
+            float mountainCarvingReduction = 1f - (mountainMask * 0.9f); // Reduce carving by up to 90% in mountain areas
+            waterCarving *= mountainCarvingReduction;
+            
+            float heightBeforeCarving = height;
+            height = Mathf.Max(0f, height - waterCarving); // Subtract carving, but don't go below 0
             
             // DEBUG: Log detailed height breakdown (only log once per terrain generation)
             // Use a simple coordinate check that will definitely match during terrain generation
@@ -154,8 +172,13 @@ namespace Hearthbound.Utilities
                 Debug.Log($"   baseNoise={baseNoise:F3}, hillNoise={hillNoise:F3}, mountainNoise={mountainRangeNoise:F3}");
                 Debug.Log($"   continentalMask={continentalMask:F3}, hillMask={hillMask:F3}, mountainMask={mountainMask:F3}");
                 Debug.Log($"🔍 [NoiseGenerator] Height Components:");
-                Debug.Log($"   plains={plainsHeight:F2}, hills={hillsHeight:F2}, mountains={mountainsHeight:F2}, TOTAL={height:F2}");
+                Debug.Log($"   plains={plainsHeight:F2}, hills={hillsHeight:F2}, mountains={mountainsHeight:F2}, BEFORE_CARVING={heightBeforeCarving:F2}");
                 Debug.Log($"   Height Params: baseHeight={baseHeight:F1}, hillHeight={hillHeight:F1}, mountainHeight={mountainHeight:F1}");
+                Debug.Log($"🌊 [Rivers and Lakes] Water Features:");
+                Debug.Log($"   riverNoise={riverNoise:F3} (threshold: {riverWidth:F3}, {(riverNoise < riverWidth ? "RIVER" : "no river")})");
+                Debug.Log($"   lakeNoise={lakeNoise:F3} (threshold: 0.3, {(lakeNoise < 0.3f ? "LAKE" : "no lake")})");
+                Debug.Log($"   waterCarving={waterCarving:F2}, heightAfterCarving={height:F2}");
+                Debug.Log($"   Water Params: riverWidth={riverWidth:F3}, riverDepth={riverDepth:F1}, lakeDepth={lakeDepth:F1}");
             }
             
             // NOTE: Power curve (peakSharpness) is now applied in TerrainGenerator after normalization
@@ -253,6 +276,75 @@ namespace Hearthbound.Utilities
             float distance = Vector2.Distance(new Vector2(x, y), new Vector2(centerX, centerY));
             float falloff = Mathf.Clamp01(1f - (distance / radius));
             return value * falloff;
+        }
+
+        /// <summary>
+        /// Generate river path noise - creates winding river channels
+        /// Returns 0-1 where values close to 0 indicate river paths
+        /// </summary>
+        public static float GetRiverNoise(float x, float y, int seed, float frequency = 0.0005f)
+        {
+            // Use domain warping to create meandering river paths
+            float warpX = GetNoise2D(x, y, seed + 300, frequency * 0.3f) * 200f;
+            float warpY = GetNoise2D(x, y, seed + 400, frequency * 0.3f) * 200f;
+            
+            // Generate base river noise at warped coordinates
+            float riverNoise = GetNoise2D(x + warpX, y + warpY, seed + 6000, frequency);
+            
+            // Create river channels using distance from 0.5
+            // Values close to 0.5 become rivers (narrow channels)
+            float riverMask = Mathf.Abs(riverNoise - 0.5f) * 2f; // Remap to 0-1
+            
+            return riverMask;
+        }
+
+        /// <summary>
+        /// Generate lake depression noise - creates natural lake basins
+        /// Returns 0-1 where low values indicate lake depressions
+        /// </summary>
+        public static float GetLakeNoise(float x, float y, int seed, float frequency = 0.0003f)
+        {
+            // Use multiple noise layers for organic lake shapes
+            float noise1 = GetNoise2D(x, y, seed + 7000, frequency);
+            float noise2 = GetNoise2D(x, y, seed + 7100, frequency * 2f);
+            
+            // Combine for more interesting shapes
+            float combined = noise1 * 0.7f + noise2 * 0.3f;
+            
+            // Create circular depressions using power curve
+            float lakeMask = Mathf.Pow(combined, 2.0f);
+            
+            return lakeMask;
+        }
+
+        /// <summary>
+        /// Calculate water carving effect - how much to lower terrain for water features
+        /// </summary>
+        public static float GetWaterCarving(float x, float y, int seed, float riverWidth = 0.15f, float riverDepth = 40f, float lakeDepth = 30f)
+        {
+            float riverNoise = GetRiverNoise(x, y, seed);
+            float lakeNoise = GetLakeNoise(x, y, seed);
+            
+            // Rivers: carve where riverNoise is below threshold
+            float riverCarving = 0f;
+            if (riverNoise < riverWidth)
+            {
+                // Smooth carving based on distance from river center
+                float riverStrength = 1f - (riverNoise / riverWidth);
+                riverCarving = riverStrength * riverDepth;
+            }
+            
+            // Lakes: carve where lakeNoise is below threshold
+            float lakeCarving = 0f;
+            if (lakeNoise < 0.3f)
+            {
+                // Smooth carving for lake basins
+                float lakeStrength = 1f - (lakeNoise / 0.3f);
+                lakeCarving = lakeStrength * lakeDepth;
+            }
+            
+            // Return the maximum carving (rivers and lakes don't stack)
+            return Mathf.Max(riverCarving, lakeCarving);
         }
     }
 }

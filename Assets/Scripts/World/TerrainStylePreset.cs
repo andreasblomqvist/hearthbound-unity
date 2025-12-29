@@ -53,6 +53,10 @@ namespace Hearthbound.World
         [Range(0.3f, 0.7f)]
         public float continentalThreshold = 0.5f;
         
+        [Tooltip("Continental mask frequency - controls size of mountain regions (0.0002-0.0005 recommended, lower = larger regions)")]
+        [Range(0.0001f, 0.001f)]
+        public float continentalMaskFrequency = 0.0003f;
+        
         [Tooltip("Domain warp strength for mountain ranges (100-200 recommended)")]
         [Range(100f, 250f)]
         public float warpStrength = 150f;
@@ -85,6 +89,7 @@ namespace Hearthbound.World
             terrainGenerator.SetRockHeight(rockHeight);
             terrainGenerator.SetSnowHeight(snowHeight);
             terrainGenerator.SetContinentalThreshold(continentalThreshold);
+            terrainGenerator.SetContinentalMaskFrequency(continentalMaskFrequency);
             terrainGenerator.SetWarpStrength(warpStrength);
             terrainGenerator.SetMountainFrequency(mountainFrequency);
             terrainGenerator.SetPeakSharpness(peakSharpness);
