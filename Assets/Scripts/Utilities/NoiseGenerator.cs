@@ -45,23 +45,54 @@ namespace Hearthbound.Utilities
         /// <summary>
         /// Generate height value for terrain
         /// Combines multiple noise layers for realistic terrain
+        /// Creates flatter terrain with clustered mountains
         /// </summary>
         public static float GetTerrainHeight(float x, float y, int seed, float baseHeight = 50f, float hillHeight = 30f, float mountainHeight = 100f)
         {
-            // Base terrain (large features)
-            float baseNoise = GetFractalNoise(x, y, seed, 4, 0.001f, 2.0f, 0.5f);
+            // Use different seed offsets for each layer to avoid correlation
+            // Add position-based variation to break up patterns
+            float offsetX = (seed % 1000) * 0.01f;
+            float offsetY = ((seed / 1000) % 1000) * 0.01f;
             
-            // Hills (medium features)
-            float hillNoise = GetFractalNoise(x, y, seed + 1000, 3, 0.005f, 2.0f, 0.5f);
+            // Base terrain (large, flat features) - very low frequency for broad, flat areas
+            float baseNoise = GetFractalNoise(x + offsetX, y + offsetY, seed, 4, 0.0005f, 2.0f, 0.5f);
             
-            // Mountains (sharp peaks)
-            float mountainNoise = GetFractalNoise(x, y, seed + 2000, 2, 0.002f, 2.5f, 0.6f);
-            mountainNoise = Mathf.Pow(mountainNoise, 2f); // Square for sharper peaks
+            // Hills (gentle rolling hills) - reduced contribution for flatter terrain
+            float hillNoise = GetFractalNoise(x - offsetX * 2, y - offsetY * 2, seed + 1000, 3, 0.002f, 2.2f, 0.5f);
             
-            // Combine layers
+            // Mountains (clustered mountain regions) - MUCH lower frequency to create large mountain groups
+            // Use lower frequency (0.0003f instead of 0.0015f) to create larger, clustered mountain regions
+            float rotatedX = x * 0.707f - y * 0.707f; // 45 degree rotation
+            float rotatedY = x * 0.707f + y * 0.707f;
+            float mountainNoise = GetFractalNoise(rotatedX + offsetX, rotatedY + offsetY, seed + 2000, 4, 0.0003f, 2.5f, 0.6f);
+            
+            // Create mountain clusters: only apply mountains where noise is above a threshold
+            // This creates distinct mountain regions rather than scattered peaks
+            float mountainThreshold = 0.6f; // Only create mountains where noise > 0.6
+            float mountainMask = Mathf.Clamp01((mountainNoise - mountainThreshold) / (1f - mountainThreshold));
+            mountainMask = Mathf.Pow(mountainMask, 1.5f); // Sharpen the transition
+            mountainNoise = mountainMask * mountainNoise; // Apply mask
+            
+            // Add subtle variation for organic feel (reduced)
+            float warpX = GetNoise2D(x, y, seed + 5000, 0.001f) * 30f;
+            float warpY = GetNoise2D(x, y, seed + 6000, 0.001f) * 30f;
+            float warpedNoise = GetFractalNoise(x + warpX, y + warpY, seed + 3000, 2, 0.003f, 2.0f, 0.5f);
+            
+            // Combine layers with varied weights
             float height = baseNoise * baseHeight;
-            height += hillNoise * hillHeight;
-            height += mountainNoise * mountainHeight;
+            height += hillNoise * hillHeight * 0.6f; // Slightly reduced hill contribution for more plains
+            height += mountainNoise * mountainHeight; // Mountains only in clusters
+            height += warpedNoise * (hillHeight * 0.4f); // Subtle variation
+            
+            // Apply mild flattening curve: keeps most terrain lower but preserves variation
+            // Use a gentler curve to flatten lowlands without making everything disappear
+            float maxPossibleHeight = baseHeight + hillHeight + mountainHeight;
+            float normalizedHeight = height / maxPossibleHeight;
+            
+            // Gentle curve: flattens low areas slightly, preserves high areas
+            // Curve: y = x^1.2 instead of x^1.8 (much gentler)
+            normalizedHeight = Mathf.Pow(normalizedHeight, 1.2f);
+            height = normalizedHeight * maxPossibleHeight;
             
             return height;
         }

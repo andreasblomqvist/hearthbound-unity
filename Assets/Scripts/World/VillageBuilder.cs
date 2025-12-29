@@ -1,6 +1,9 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Hearthbound.Utilities;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace Hearthbound.World
 {
@@ -52,9 +55,18 @@ namespace Hearthbound.World
                 terrainGenerator = FindObjectOfType<TerrainGenerator>();
             }
 
-            // Create container for villages
-            villagesContainer = new GameObject("Villages").transform;
-            villagesContainer.SetParent(transform);
+            // Find or create container for villages
+            Transform existingContainer = transform.Find("Villages");
+            if (existingContainer == null)
+            {
+                GameObject containerObj = new GameObject("Villages");
+                villagesContainer = containerObj.transform;
+                villagesContainer.SetParent(transform);
+            }
+            else
+            {
+                villagesContainer = existingContainer;
+            }
         }
         #endregion
 
@@ -63,13 +75,29 @@ namespace Hearthbound.World
         {
             Debug.Log($"🏘️ Generating {numberOfVillages} villages with seed: {seed}");
             
-            Random.InitState(seed);
-            
-            // Clear existing villages
+            // Always clear existing villages first
             ClearVillages();
+            
+            Random.InitState(seed);
             
             // Find village locations
             FindVillageLocations(seed);
+            
+            // Ensure container exists before building
+            if (villagesContainer == null)
+            {
+                Transform existingContainer = transform.Find("Villages");
+                if (existingContainer != null)
+                {
+                    villagesContainer = existingContainer;
+                }
+                else
+                {
+                    GameObject containerObj = new GameObject("Villages");
+                    villagesContainer = containerObj.transform;
+                    villagesContainer.SetParent(transform);
+                }
+            }
             
             // Build each village
             for (int i = 0; i < villagePositions.Count; i++)
@@ -154,6 +182,22 @@ namespace Hearthbound.World
         private void BuildVillage(Vector3 centerPosition, int villageSeed)
         {
             Random.InitState(villageSeed);
+
+            // Ensure container exists
+            if (villagesContainer == null)
+            {
+                Transform existingContainer = transform.Find("Villages");
+                if (existingContainer != null)
+                {
+                    villagesContainer = existingContainer;
+                }
+                else
+                {
+                    GameObject containerObj = new GameObject("Villages");
+                    villagesContainer = containerObj.transform;
+                    villagesContainer.SetParent(transform);
+                }
+            }
 
             // Create village container
             GameObject villageObj = new GameObject($"Village_{villagePositions.IndexOf(centerPosition)}");
@@ -295,25 +339,49 @@ namespace Hearthbound.World
         {
             Debug.Log("🗑️ Clearing villages...");
             
-            foreach (GameObject building in generatedBuildings)
+            // Find container if not already found
+            if (villagesContainer == null)
             {
-                if (building != null)
-                    Destroy(building);
+                villagesContainer = transform.Find("Villages");
             }
-            
-            generatedBuildings.Clear();
-            villagePositions.Clear();
 
-            // Clear village containers
+            // Clear village containers first (this will destroy all children)
             if (villagesContainer != null)
             {
+                // Create a list of children to destroy (to avoid modifying collection during iteration)
+                List<Transform> childrenToDestroy = new List<Transform>();
                 foreach (Transform child in villagesContainer)
                 {
-                    Destroy(child.gameObject);
+                    if (child != null)
+                    {
+                        childrenToDestroy.Add(child);
+                    }
+                }
+                
+                foreach (Transform child in childrenToDestroy)
+                {
+                    if (child != null)
+                    {
+                        if (Application.isPlaying)
+                        {
+                            Destroy(child.gameObject);
+                        }
+                        else
+                        {
+#if UNITY_EDITOR
+                            DestroyImmediate(child.gameObject);
+                            EditorUtility.SetDirty(gameObject);
+#endif
+                        }
+                    }
                 }
             }
             
-            Debug.Log("✅ Villages cleared");
+            // Clear buildings list (may contain references to already-destroyed objects)
+            generatedBuildings.Clear();
+            villagePositions.Clear();
+            
+            Debug.Log($"✅ Villages cleared (container: {villagesContainer != null})");
         }
         #endregion
 

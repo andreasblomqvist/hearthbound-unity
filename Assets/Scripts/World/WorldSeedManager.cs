@@ -84,7 +84,9 @@ namespace Hearthbound.World
 
         public void GenerateRandomSeed()
         {
-            worldSeed = Random.Range(int.MinValue, int.MaxValue);
+            // Generate a positive random seed (0 to int.MaxValue)
+            // Using a large range for variety, but keeping it positive for clarity
+            worldSeed = Random.Range(0, int.MaxValue);
             Random.InitState(worldSeed);
             AddToHistory(worldSeed);
             Debug.Log($"🎲 Generated random world seed: {worldSeed}");
@@ -145,6 +147,12 @@ namespace Hearthbound.World
                 forestGen.GenerateForests(worldSeed);
             }
             
+            WaterGenerator waterGen = FindObjectOfType<WaterGenerator>();
+            if (waterGen != null)
+            {
+                waterGen.GenerateWater();
+            }
+            
             Debug.Log("✅ World generation complete!");
         }
 
@@ -185,6 +193,12 @@ namespace Hearthbound.World
             if (forestGen != null)
             {
                 forestGen.ClearForests();
+            }
+            
+            WaterGenerator waterGen = FindObjectOfType<WaterGenerator>();
+            if (waterGen != null)
+            {
+                waterGen.ClearWater();
             }
         }
         #endregion

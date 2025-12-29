@@ -1,6 +1,9 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Hearthbound.Utilities;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace Hearthbound.World
 {
@@ -56,9 +59,18 @@ namespace Hearthbound.World
                 terrainGenerator = FindObjectOfType<TerrainGenerator>();
             }
 
-            // Create container for forests
-            forestsContainer = new GameObject("Forests").transform;
-            forestsContainer.SetParent(transform);
+            // Find or create container for forests
+            Transform existingContainer = transform.Find("Forests");
+            if (existingContainer == null)
+            {
+                GameObject containerObj = new GameObject("Forests");
+                forestsContainer = containerObj.transform;
+                forestsContainer.SetParent(transform);
+            }
+            else
+            {
+                forestsContainer = existingContainer;
+            }
         }
         #endregion
 
@@ -67,13 +79,29 @@ namespace Hearthbound.World
         {
             Debug.Log($"🌲 Generating {numberOfForests} forests with seed: {seed}");
             
-            Random.InitState(seed);
-            
-            // Clear existing forests
+            // Always clear existing forests first
             ClearForests();
+            
+            Random.InitState(seed);
             
             // Find forest locations
             FindForestLocations(seed);
+            
+            // Ensure container exists before generating
+            if (forestsContainer == null)
+            {
+                Transform existingContainer = transform.Find("Forests");
+                if (existingContainer != null)
+                {
+                    forestsContainer = existingContainer;
+                }
+                else
+                {
+                    GameObject containerObj = new GameObject("Forests");
+                    forestsContainer = containerObj.transform;
+                    forestsContainer.SetParent(transform);
+                }
+            }
             
             // Generate each forest
             for (int i = 0; i < forestCenters.Count; i++)
@@ -161,6 +189,22 @@ namespace Hearthbound.World
         private void GenerateForest(Vector3 centerPosition, int forestSeed)
         {
             Random.InitState(forestSeed);
+
+            // Ensure container exists
+            if (forestsContainer == null)
+            {
+                Transform existingContainer = transform.Find("Forests");
+                if (existingContainer != null)
+                {
+                    forestsContainer = existingContainer;
+                }
+                else
+                {
+                    GameObject containerObj = new GameObject("Forests");
+                    forestsContainer = containerObj.transform;
+                    forestsContainer.SetParent(transform);
+                }
+            }
 
             // Create forest container
             GameObject forestObj = new GameObject($"Forest_{forestCenters.IndexOf(centerPosition)}");
@@ -329,25 +373,49 @@ namespace Hearthbound.World
         {
             Debug.Log("🗑️ Clearing forests...");
             
-            foreach (GameObject obj in generatedObjects)
+            // Find container if not already found
+            if (forestsContainer == null)
             {
-                if (obj != null)
-                    Destroy(obj);
+                forestsContainer = transform.Find("Forests");
             }
-            
-            generatedObjects.Clear();
-            forestCenters.Clear();
 
-            // Clear forest containers
+            // Clear forest containers first (this will destroy all children)
             if (forestsContainer != null)
             {
+                // Create a list of children to destroy (to avoid modifying collection during iteration)
+                List<Transform> childrenToDestroy = new List<Transform>();
                 foreach (Transform child in forestsContainer)
                 {
-                    Destroy(child.gameObject);
+                    if (child != null)
+                    {
+                        childrenToDestroy.Add(child);
+                    }
+                }
+                
+                foreach (Transform child in childrenToDestroy)
+                {
+                    if (child != null)
+                    {
+                        if (Application.isPlaying)
+                        {
+                            Destroy(child.gameObject);
+                        }
+                        else
+                        {
+#if UNITY_EDITOR
+                            DestroyImmediate(child.gameObject);
+                            EditorUtility.SetDirty(gameObject);
+#endif
+                        }
+                    }
                 }
             }
             
-            Debug.Log("✅ Forests cleared");
+            // Clear objects list (may contain references to already-destroyed objects)
+            generatedObjects.Clear();
+            forestCenters.Clear();
+            
+            Debug.Log($"✅ Forests cleared (container: {forestsContainer != null})");
         }
         #endregion
 

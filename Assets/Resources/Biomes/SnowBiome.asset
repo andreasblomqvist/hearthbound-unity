@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bcef923f1c672c74dbfff1de759476a4, type: 3}
+  m_Name: SnowBiome
+  m_EditorClassIdentifier: 
+  biomeName: Snow
+  heightRange: {x: 0.7, y: 1}
+  temperatureRange: {x: 0, y: 0.3}
+  humidityRange: {x: 0, y: 1}
+  humidity: 0.5
+  temperature: 0.15
+  heightMultiplier: 1.2
+  terrainLayers:
+  - diffuseTexture: {fileID: 0}
+    tileSize: {x: 15, y: 15}
+    color: {r: 0.9, g: 0.95, b: 1, a: 1}
+  heightBlendFactor: 5
+  humidityBlendFactor: 5
+  temperatureBlendFactor: 5
