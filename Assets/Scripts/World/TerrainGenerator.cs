@@ -25,9 +25,9 @@ namespace Hearthbound.World
         [SerializeField] private int heightmapResolution = 513;
         
         [Header("Height Generation")]
-        [SerializeField] private float baseHeight = 80f; // Base terrain height (plains/lowlands) - increased to prevent everything being underwater
-        [SerializeField] private float hillHeight = 60f; // Gentle hills for variation
-        [SerializeField] private float mountainHeight = 200f; // Clustered mountains
+        [SerializeField] private float baseHeight = 150f; // Base terrain height (plains/lowlands) - increased significantly to prevent flat terrain
+        [SerializeField] private float hillHeight = 100f; // Gentle hills for variation - increased for more visible hills
+        [SerializeField] private float mountainHeight = 300f; // Clustered mountains - increased for more prominent mountains
         [SerializeField] private AnimationCurve heightCurve = AnimationCurve.EaseInOut(0, 0, 1, 1);
         
         [Header("Noise Parameters")]
@@ -208,8 +208,11 @@ namespace Hearthbound.World
                     if (maxPossibleHeight > 0f)
                     {
                         normalizedHeight = heightValue / maxPossibleHeight;
-                        // Apply power curve to make peaks sharper (moved from GetTerrainHeight)
-                        normalizedHeight = Mathf.Pow(normalizedHeight, peakSharpness);
+                        // NOTE: Power curve removed - it was reducing already-low heights
+                        // For values < 1.0, raising to power > 1.0 makes them smaller
+                        // Example: 0.117^1.45 = 0.044 (makes terrain flatter, not sharper)
+                        // If you want sharper peaks, increase raw heights instead
+                        // normalizedHeight = Mathf.Pow(normalizedHeight, peakSharpness);
                     }
                     
                     // Debug logging for first few samples
@@ -260,6 +263,7 @@ namespace Hearthbound.World
             }
 
             // Count terrain distribution for verification
+            // Adjusted thresholds to match actual height distribution (normalized heights are typically 0.15-0.3)
             int plainsCount = 0;
             int hillsCount = 0;
             int mountainsCount = 0;
@@ -271,14 +275,16 @@ namespace Hearthbound.World
                 for (int x = 0; x < width; x++)
                 {
                     float h = heights[z, x];
-                    if (h < 0.3f)
+                    if (h < 0.15f) // Plains: below 15%
                         plainsCount++;
-                    else if (h < 0.6f)
+                    else if (h < 0.4f) // Hills: 15% - 40%
                         hillsCount++;
-                    else
+                    else if (h < 0.6f) // Mountains: 40% - 60%
+                        mountainsCount++;
+                    else // High mountains: 60%+
                         mountainsCount++;
                     
-                    if (h > 0.8f)
+                    if (h > 0.6f) // Peaks: above 60%
                         peaksCount++;
                 }
             }

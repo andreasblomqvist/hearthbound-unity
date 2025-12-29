@@ -114,10 +114,10 @@ namespace Hearthbound.Utilities
             
             // 2. Generate base plains using low frequency noise
             float baseNoise = GetNoise2D(x, y, seed, 0.001f);
-            // FIXED: Use full baseHeight instead of 0.3 multiplier (was making terrain too flat)
-            // baseNoise should now be guaranteed 0-1 range after GetNoise2D fix
+            // FIXED: Use full baseHeight and ensure minimum height
             // Ensure base terrain has minimum height to prevent everything being underwater
-            float plainsHeight = Mathf.Max(baseNoise * baseHeight, baseHeight * 0.3f); // Minimum 30% of baseHeight everywhere
+            // Use higher multiplier to get more visible terrain
+            float plainsHeight = Mathf.Max(baseNoise * baseHeight, baseHeight * 0.5f); // Minimum 50% of baseHeight everywhere
             
             // DEBUG: Log noise values early to diagnose (only at one specific point)
             if (x > 100 && y > 100 && x < 250 && y < 250 && (x == 200 && y == 200))
@@ -127,17 +127,17 @@ namespace Hearthbound.Utilities
             
             // 3. Generate rolling hills using medium frequency fractal noise
             float hillNoise = GetFractalNoise(x, y, seed + 1000, 3, 0.003f, 2.2f, 0.5f);
-            // TEMPORARY: Make masks extremely permissive to ensure terrain appears
+            // Make masks permissive to ensure terrain appears
             // Use continental mask as a gentle multiplier, not a strict filter
-            float hillMask = Mathf.Max(0.5f, continentalMask); // Minimum 50% strength, up to 100% based on mask
+            float hillMask = Mathf.Max(0.7f, continentalMask); // Minimum 70% strength, up to 100% based on mask
             float hillsHeight = hillNoise * hillHeight * hillMask;
             
             // 4. Generate mountain ranges using domain warping and ridged noise
             float mountainRangeNoise = GetMountainRangeNoise(x, y, seed, mountainFrequency, warpStrength);
             
-            // TEMPORARY: Make masks extremely permissive to ensure terrain appears
+            // Make masks permissive to ensure terrain appears
             // Use continental mask as a gentle multiplier, not a strict filter
-            float mountainMask = Mathf.Max(0.3f, continentalMask * 0.8f); // Minimum 30% strength, up to 80% based on mask
+            float mountainMask = Mathf.Max(0.5f, continentalMask * 0.9f); // Minimum 50% strength, up to 90% based on mask
             float mountainsHeight = mountainRangeNoise * mountainHeight * 1.5f * mountainMask;
             
             // 5. Combine layers - RAW height values (not normalized)
