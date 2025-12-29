@@ -60,6 +60,10 @@ namespace Hearthbound.World
         [Range(10f, 500f)]
         [SerializeField] private float riverDepth = 40f;
         
+        [Tooltip("Lake threshold - Lower = more lakes, Higher = fewer lakes")]
+        [Range(0.1f, 0.5f)]
+        [SerializeField] private float lakeThreshold = 0.3f;
+        
         [Tooltip("How deep lake basins are (in world units)")]
         [Range(10f, 500f)]
         [SerializeField] private float lakeDepth = 30f;
@@ -152,10 +156,10 @@ namespace Hearthbound.World
             if (terrainCollider != null && terrainCollider.terrainData != terrainData)
             {
                 terrainCollider.terrainData = terrainData;
-                Debug.Log("  ✅ Synced TerrainCollider with TerrainData");
+                Debug.Log("  Synced TerrainCollider with TerrainData");
             }
             
-            Debug.Log($"🗻 Terrain initialized: {terrainWidth}x{terrainLength}, Height: {terrainHeight}");
+            Debug.Log($"Terrain initialized: {terrainWidth}x{terrainLength}, Height: {terrainHeight}");
         }
         #endregion
 
@@ -168,7 +172,7 @@ namespace Hearthbound.World
                 InitializeTerrainData();
             }
 
-            Debug.Log($"🗻 Generating terrain with seed: {seed}");
+            Debug.Log($"Generating terrain with seed: {seed}");
             
             Random.InitState(seed);
             
@@ -181,13 +185,13 @@ namespace Hearthbound.World
             // Add detail layers (grass, rocks)
             GenerateDetailLayers(seed);
             
-            Debug.Log("✅ Terrain generation complete!");
+            Debug.Log("Terrain generation complete!");
         }
 
         private void GenerateHeightmap(int seed)
         {
             Debug.Log("  Generating heightmap...");
-            Debug.Log($"  🌊 Water Carving Params: riverWidth={riverWidth:F3}, riverDepth={riverDepth:F1}, lakeDepth={lakeDepth:F1}");
+            Debug.Log($"  Water Carving Params: riverWidth={riverWidth:F3}, riverDepth={riverDepth:F1}, lakeThreshold={lakeThreshold:F3}, lakeDepth={lakeDepth:F1}");
             
             int width = terrainData.heightmapResolution;
             int height = terrainData.heightmapResolution;
@@ -227,7 +231,7 @@ namespace Hearthbound.World
                         worldX, worldZ, seed,
                         baseHeight, hillHeight, mountainHeight,
                         continentalThreshold, warpStrength, mountainFrequency, peakSharpness, continentalMaskFrequency,
-                        riverWidth, riverDepth, lakeDepth
+                        riverWidth, riverDepth, lakeThreshold, lakeDepth
                     );
                     
                     // Track actual min/max
@@ -255,8 +259,8 @@ namespace Hearthbound.World
                         float sampleWorldX = (width / 4) * scaleX;
                         float sampleWorldZ = (height / 4) * scaleZ;
                         float sampleContinentalMask = NoiseGenerator.GetContinentalMask(sampleWorldX, sampleWorldZ, seed, continentalMaskFrequency);
-                        Debug.Log($"🔍 Height Debug - Raw: {heightValue:F2}, Max: {maxPossibleHeight:F2}, Normalized: {normalizedHeight:F3}");
-                        Debug.Log($"🔍 Continental Mask: {sampleContinentalMask:F3}, Threshold: {continentalThreshold:F3}");
+                        Debug.Log($"Height Debug - Raw: {heightValue:F2}, Max: {maxPossibleHeight:F2}, Normalized: {normalizedHeight:F3}");
+                        Debug.Log($"Continental Mask: {sampleContinentalMask:F3}, Threshold: {continentalThreshold:F3}");
                         
                         // Call GetTerrainHeight again with debug to see what's happening
                         // We'll manually break down the height calculation to match what GetTerrainHeight does
@@ -270,19 +274,19 @@ namespace Hearthbound.World
                         float testMountainsHeight = testMountainNoise * mountainHeight * 1.5f * testMountainMask;
                         float testTotal = testPlainsHeight + testHillsHeight + testMountainsHeight;
                         
-                        Debug.Log($"🔍 [NoiseGenerator] Called with world ({sampleWorldX:F1}, {sampleWorldZ:F1}):");
+                        Debug.Log($"[NoiseGenerator] Called with world ({sampleWorldX:F1}, {sampleWorldZ:F1}):");
                         Debug.Log($"   baseNoise={testBaseNoise:F3}, hillNoise={testHillNoise:F3}, mountainNoise={testMountainNoise:F3}");
                         Debug.Log($"   continentalMask={sampleContinentalMask:F3}, hillMask={testHillMask:F3}, mountainMask={testMountainMask:F3}");
                         Debug.Log($"   plains={testPlainsHeight:F2}, hills={testHillsHeight:F2}, mountains={testMountainsHeight:F2}, TOTAL={testTotal:F2}");
                         
-                        Debug.Log($"🔍 [TerrainGenerator] DETAILED Height Breakdown at pixel ({x}, {z}) / world ({sampleWorldX:F1}, {sampleWorldZ:F1}):");
+                        Debug.Log($"[TerrainGenerator] DETAILED Height Breakdown at pixel ({x}, {z}) / world ({sampleWorldX:F1}, {sampleWorldZ:F1}):");
                         Debug.Log($"   baseNoise={testBaseNoise:F3}, hillNoise={testHillNoise:F3}, mountainNoise={testMountainNoise:F3}");
                         Debug.Log($"   hillMask={testHillMask:F3}, mountainMask={testMountainMask:F3}");
                         Debug.Log($"   plains={testPlainsHeight:F2}, hills={testHillsHeight:F2}, mountains={testMountainsHeight:F2}");
                         // Add river and lake information
                         float sampleRiverNoise = NoiseGenerator.GetRiverNoise(sampleWorldX, sampleWorldZ, seed);
                         float sampleLakeNoise = NoiseGenerator.GetLakeNoise(sampleWorldX, sampleWorldZ, seed);
-                        float sampleWaterCarving = NoiseGenerator.GetWaterCarving(sampleWorldX, sampleWorldZ, seed, riverWidth, riverDepth, lakeDepth);
+                        float sampleWaterCarving = NoiseGenerator.GetWaterCarving(sampleWorldX, sampleWorldZ, seed, riverWidth, riverDepth, lakeThreshold, lakeDepth);
                         float testTotalAfterCarving = Mathf.Max(0f, testTotal - sampleWaterCarving);
                         
                         Debug.Log($"   Manual TOTAL (before carving)={testTotal:F2}, Manual TOTAL (after carving)={testTotalAfterCarving:F2}");
@@ -290,11 +294,11 @@ namespace Hearthbound.World
                         Debug.Log($"   After normalization: {normalizedHeight:F3} (before heightCurve)");
                         Debug.Log($"   Height Params: baseHeight={baseHeight:F1}, hillHeight={hillHeight:F1}, mountainHeight={mountainHeight:F1}, peakSharpness={peakSharpness:F2}");
                         
-                        Debug.Log($"🌊 [TerrainGenerator] Rivers and Lakes at world ({sampleWorldX:F1}, {sampleWorldZ:F1}):");
+                        Debug.Log($"[TerrainGenerator] Rivers and Lakes at world ({sampleWorldX:F1}, {sampleWorldZ:F1}):");
                         Debug.Log($"   riverNoise={sampleRiverNoise:F3} (threshold: {riverWidth:F3}, {(sampleRiverNoise < riverWidth ? "RIVER" : "no river")})");
-                        Debug.Log($"   lakeNoise={sampleLakeNoise:F3} (threshold: 0.3, {(sampleLakeNoise < 0.3f ? "LAKE" : "no lake")})");
+                        Debug.Log($"   lakeNoise={sampleLakeNoise:F3} (threshold: {lakeThreshold:F3}, {(sampleLakeNoise < lakeThreshold ? "LAKE" : "no lake")})");
                         Debug.Log($"   waterCarving={sampleWaterCarving:F2}, heightBeforeCarving={testTotal:F2}, heightAfterCarving={testTotalAfterCarving:F2}");
-                        Debug.Log($"   Water Params: riverWidth={riverWidth:F3}, riverDepth={riverDepth:F1}, lakeDepth={lakeDepth:F1}");
+                        Debug.Log($"   Water Params: riverWidth={riverWidth:F3}, riverDepth={riverDepth:F1}, lakeThreshold={lakeThreshold:F3}, lakeDepth={lakeDepth:F1}");
                         
                         loggedSample = true;
                     }
@@ -310,7 +314,7 @@ namespace Hearthbound.World
             }
             
             // Log actual height range for debugging
-            Debug.Log($"  📊 Actual Height Range: Min={actualMinHeight:F2}, Max={actualMaxHeight:F2}, Theoretical Max={maxPossibleHeight:F2}");
+            Debug.Log($"  Actual Height Range: Min={actualMinHeight:F2}, Max={actualMaxHeight:F2}, Theoretical Max={maxPossibleHeight:F2}");
 
             // Count terrain distribution for verification
             // Adjusted thresholds to match actual height distribution (normalized heights are typically 0.15-0.3)
@@ -344,10 +348,10 @@ namespace Hearthbound.World
             float mountainsPercent = (mountainsCount / (float)totalPixels) * 100f;
             float peaksPercent = (peaksCount / (float)totalPixels) * 100f;
             
-            Debug.Log($"  📊 Terrain distribution: Plains={plainsPercent:F0}%, Hills={hillsPercent:F0}%, Mountains={mountainsPercent:F0}%, Peaks={peaksPercent:F0}%");
+            Debug.Log($"  Terrain distribution: Plains={plainsPercent:F0}%, Hills={hillsPercent:F0}%, Mountains={mountainsPercent:F0}%, Peaks={peaksPercent:F0}%");
 
             terrainData.SetHeights(0, 0, heights);
-            Debug.Log("  ✅ Heightmap generated");
+            Debug.Log("  Heightmap generated");
         }
 
         private void GenerateSplatmap(int seed)
@@ -362,7 +366,7 @@ namespace Hearthbound.World
             }
             
             // Fall back to legacy system
-            Debug.LogWarning("⚠️ BiomeCollection not assigned or empty! Using legacy biome system. Please assign a BiomeCollection asset or create one via: Hearthbound > Create Default Biome Collection");
+            Debug.LogWarning("BiomeCollection not assigned or empty! Using legacy biome system. Please assign a BiomeCollection asset or create one via: Hearthbound > Create Default Biome Collection");
             GenerateSplatmapLegacy(seed);
         }
 
@@ -396,9 +400,9 @@ namespace Hearthbound.World
 
             // FIXED: Generate temperature and humidity maps ONCE for the entire terrain
             // This ensures consistency and allows for proper biome zones
-            Debug.Log("  🔥 Generating temperature map (latitude-based, NOT height-based)...");
+            Debug.Log("  Generating temperature map (latitude-based, NOT height-based)...");
             float[,] temperatureMap = GenerateTemperatureMap(alphamapWidth, alphamapHeight, seed);
-            Debug.Log("  💧 Generating humidity map (noise-based, NOT temperature-coupled)...");
+            Debug.Log("  Generating humidity map (noise-based, NOT temperature-coupled)...");
             float[,] humidityMap = GenerateHumidityMap(alphamapWidth, alphamapHeight, seed);
             
             // Log sample temperature/humidity values to verify they vary correctly
@@ -414,11 +418,11 @@ namespace Hearthbound.World
             float height3 = terrainData.GetHeight(Mathf.RoundToInt(sampleX / (float)alphamapWidth * terrainData.heightmapResolution), 
                                                   Mathf.RoundToInt(sampleZ3 / (float)alphamapHeight * terrainData.heightmapResolution)) / terrainHeight;
             
-            Debug.Log($"  📊 Temperature samples (same X={sampleX}, different Z positions):");
+            Debug.Log($"  Temperature samples (same X={sampleX}, different Z positions):");
             Debug.Log($"     Z={sampleZ1} (edge): height={height1:F3}, temp={temperatureMap[sampleX, sampleZ1]:F3}, humid={humidityMap[sampleX, sampleZ1]:F3}");
             Debug.Log($"     Z={sampleZ2} (center): height={height2:F3}, temp={temperatureMap[sampleX, sampleZ2]:F3}, humid={humidityMap[sampleX, sampleZ2]:F3}");
             Debug.Log($"     Z={sampleZ3} (edge): height={height3:F3}, temp={temperatureMap[sampleX, sampleZ3]:F3}, humid={humidityMap[sampleX, sampleZ3]:F3}");
-            Debug.Log($"  ✅ Notice: Temperature varies by Z position (latitude), not just height!");
+            Debug.Log($"  Notice: Temperature varies by Z position (latitude), not just height!");
 
             for (int z = 0; z < alphamapHeight; z++)
             {
@@ -444,12 +448,30 @@ namespace Hearthbound.World
                     // Calculate biome weights using BiomeCollection
                     var biomeWeights = biomeCollection.CalculateBiomeWeights(moisture, temperature, height, slope);
 
-                    // Force water biome for areas below water threshold (rivers/lakes)
-                    // BUT exclude mountain areas - water shouldn't climb up mountains
                     // Check if this is a mountain area: high slope OR height above rock threshold
+                    // Use more aggressive thresholds to prevent water on mountains
                     bool isMountainArea = slope > steepSlope || height > rockHeight;
                     
-                    if (height < waterHeight && !isMountainArea)
+                    // Remove water biome from mountain areas (even if it was calculated by biome system)
+                    if (isMountainArea)
+                    {
+                        BiomeData waterBiomeToRemove = null;
+                        foreach (var kvp in biomeWeights)
+                        {
+                            if (kvp.Key != null && kvp.Key.biomeName == "Water")
+                            {
+                                waterBiomeToRemove = kvp.Key;
+                                break;
+                            }
+                        }
+                        if (waterBiomeToRemove != null)
+                        {
+                            biomeWeights.Remove(waterBiomeToRemove);
+                        }
+                    }
+                    // Force water biome for areas below water threshold (rivers/lakes)
+                    // BUT only if NOT a mountain area
+                    else if (height < waterHeight)
                     {
                         // Find water biome and give it high priority
                         BiomeData waterBiome = null;
@@ -551,7 +573,7 @@ namespace Hearthbound.World
 
             // Apply the splatmap to terrain
             terrainData.SetAlphamaps(0, 0, splatmapData);
-            Debug.Log("  ✅ Splatmap applied from BiomeCollection");
+            Debug.Log("  Splatmap applied from BiomeCollection");
         }
 
         /// <summary>
@@ -716,7 +738,7 @@ namespace Hearthbound.World
             }
 
             terrainData.SetAlphamaps(0, 0, splatmapData);
-            Debug.Log("  ✅ Splatmap generated (legacy system)");
+            Debug.Log("  Splatmap generated (legacy system)");
         }
 
         /// <summary>
@@ -918,7 +940,7 @@ namespace Hearthbound.World
             // details[1] = new DetailPrototype { prototypeTexture = rockTexture };
             // terrainData.detailPrototypes = details;
             
-            Debug.Log("  ⚠️ Detail layers not yet implemented (add grass/rock prefabs)");
+            Debug.Log("  Detail layers not yet implemented (add grass/rock prefabs)");
         }
 
         private void CreateDefaultTerrainLayers()
@@ -965,7 +987,7 @@ namespace Hearthbound.World
             layers[5].diffuseTexture.name = "DirtTexture";
 
             terrainData.terrainLayers = layers;
-            Debug.Log("  ✅ Terrain layers created: Water, Plains, Forest, Rock, Snow, Dirt");
+            Debug.Log("  Terrain layers created: Water, Plains, Forest, Rock, Snow, Dirt");
         }
 
         /// <summary>
@@ -1009,7 +1031,7 @@ namespace Hearthbound.World
         #region Clear Terrain
         public void ClearTerrain()
         {
-            Debug.Log("🗑️ Clearing terrain...");
+            Debug.Log("Clearing terrain...");
             
             // Ensure terrain is initialized
             EnsureTerrainInitialized();
@@ -1045,7 +1067,7 @@ namespace Hearthbound.World
             }
             
             terrainData.SetHeights(0, 0, heights);
-            Debug.Log("✅ Terrain cleared");
+            Debug.Log("Terrain cleared");
         }
         #endregion
 

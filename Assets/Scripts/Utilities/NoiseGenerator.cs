@@ -111,7 +111,7 @@ namespace Hearthbound.Utilities
             float baseHeight, float hillHeight, float mountainHeight,
             float continentalThreshold, float warpStrength, 
             float mountainFrequency, float peakSharpness, float continentalMaskFrequency,
-            float riverWidth, float riverDepth, float lakeDepth)
+            float riverWidth, float riverDepth, float lakeThreshold, float lakeDepth)
         {
             // 1. Generate continental mask (very low frequency) to define where mountains appear
             float continentalMask = GetContinentalMask(x, y, seed, continentalMaskFrequency);
@@ -126,7 +126,7 @@ namespace Hearthbound.Utilities
             // DEBUG: Log noise values early to diagnose (only at one specific point)
             if (x > 100 && y > 100 && x < 250 && y < 250 && (x == 200 && y == 200))
             {
-                Debug.Log($"🔍 EARLY Noise Debug - baseNoise={baseNoise:F3}, continentalMask={continentalMask:F3}");
+                Debug.Log($"EARLY Noise Debug - baseNoise={baseNoise:F3}, continentalMask={continentalMask:F3}");
             }
             
             // 3. Generate rolling hills using medium frequency fractal noise
@@ -151,7 +151,7 @@ namespace Hearthbound.Utilities
             // Reduce carving in mountain areas to prevent affecting mountain heights
             float riverNoise = GetRiverNoise(x, y, seed);
             float lakeNoise = GetLakeNoise(x, y, seed);
-            float waterCarving = GetWaterCarving(x, y, seed, riverWidth, riverDepth, lakeDepth);
+            float waterCarving = GetWaterCarving(x, y, seed, riverWidth, riverDepth, lakeThreshold, lakeDepth);
             
             // Reduce water carving in mountain areas (mountains shouldn't have rivers/lakes carved into them)
             // Use mountainMask to reduce carving - full carving in plains, reduced in hills, minimal in mountains
@@ -168,17 +168,17 @@ namespace Hearthbound.Utilities
             // World coordinates: 128 * (1000/513) ≈ 249.5
             if (Mathf.Abs(x - 250f) < 2f && Mathf.Abs(y - 250f) < 2f)
             {
-                Debug.Log($"🔍 [NoiseGenerator] FULL Noise Values Debug at world ({x:F1}, {y:F1}):");
+                Debug.Log($"[NoiseGenerator] FULL Noise Values Debug at world ({x:F1}, {y:F1}):");
                 Debug.Log($"   baseNoise={baseNoise:F3}, hillNoise={hillNoise:F3}, mountainNoise={mountainRangeNoise:F3}");
                 Debug.Log($"   continentalMask={continentalMask:F3}, hillMask={hillMask:F3}, mountainMask={mountainMask:F3}");
-                Debug.Log($"🔍 [NoiseGenerator] Height Components:");
+                Debug.Log($"[NoiseGenerator] Height Components:");
                 Debug.Log($"   plains={plainsHeight:F2}, hills={hillsHeight:F2}, mountains={mountainsHeight:F2}, BEFORE_CARVING={heightBeforeCarving:F2}");
                 Debug.Log($"   Height Params: baseHeight={baseHeight:F1}, hillHeight={hillHeight:F1}, mountainHeight={mountainHeight:F1}");
-                Debug.Log($"🌊 [Rivers and Lakes] Water Features:");
+                Debug.Log($"[Rivers and Lakes] Water Features:");
                 Debug.Log($"   riverNoise={riverNoise:F3} (threshold: {riverWidth:F3}, {(riverNoise < riverWidth ? "RIVER" : "no river")})");
-                Debug.Log($"   lakeNoise={lakeNoise:F3} (threshold: 0.3, {(lakeNoise < 0.3f ? "LAKE" : "no lake")})");
+                Debug.Log($"   lakeNoise={lakeNoise:F3} (threshold: {lakeThreshold:F3}, {(lakeNoise < lakeThreshold ? "LAKE" : "no lake")})");
                 Debug.Log($"   waterCarving={waterCarving:F2}, heightAfterCarving={height:F2}");
-                Debug.Log($"   Water Params: riverWidth={riverWidth:F3}, riverDepth={riverDepth:F1}, lakeDepth={lakeDepth:F1}");
+                Debug.Log($"   Water Params: riverWidth={riverWidth:F3}, riverDepth={riverDepth:F1}, lakeThreshold={lakeThreshold:F3}, lakeDepth={lakeDepth:F1}");
             }
             
             // NOTE: Power curve (peakSharpness) is now applied in TerrainGenerator after normalization
@@ -320,7 +320,7 @@ namespace Hearthbound.Utilities
         /// <summary>
         /// Calculate water carving effect - how much to lower terrain for water features
         /// </summary>
-        public static float GetWaterCarving(float x, float y, int seed, float riverWidth = 0.15f, float riverDepth = 40f, float lakeDepth = 30f)
+        public static float GetWaterCarving(float x, float y, int seed, float riverWidth = 0.15f, float riverDepth = 40f, float lakeThreshold = 0.3f, float lakeDepth = 30f)
         {
             float riverNoise = GetRiverNoise(x, y, seed);
             float lakeNoise = GetLakeNoise(x, y, seed);
@@ -336,10 +336,10 @@ namespace Hearthbound.Utilities
             
             // Lakes: carve where lakeNoise is below threshold
             float lakeCarving = 0f;
-            if (lakeNoise < 0.3f)
+            if (lakeNoise < lakeThreshold)
             {
                 // Smooth carving for lake basins
-                float lakeStrength = 1f - (lakeNoise / 0.3f);
+                float lakeStrength = 1f - (lakeNoise / lakeThreshold);
                 lakeCarving = lakeStrength * lakeDepth;
             }
             
