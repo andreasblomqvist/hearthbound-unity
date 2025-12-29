@@ -13,14 +13,14 @@ MonoBehaviour:
   m_Name: WaterBiome
   m_EditorClassIdentifier: 
   biomeName: Water
-  heightRange: {x: 0, y: 0.05}
-  temperatureRange: {x: 0.9, y: 1}
-  humidityRange: {x: 0.7, y: 1}
+  heightRange: {x: 0, y: 0.15}
+  temperatureRange: {x: 0, y: 1}
+  humidityRange: {x: 0.8, y: 1}
   humidity: 0.85
   temperature: 0.95
   heightMultiplier: 0.5
   terrainLayers:
   - diffuseTexture: {fileID: 0}
     tileSize: {x: 15, y: 15}
-    color: {r: 0.2, g: 0.4, b: 0.7, a: 1}
+    color: {r: 0.1, g: 0.5, b: 0.9, a: 1}
   blendStrength: 3

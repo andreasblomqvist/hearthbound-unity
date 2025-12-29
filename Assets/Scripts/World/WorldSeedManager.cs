@@ -28,7 +28,8 @@ namespace Hearthbound.World
         [Header("World Seed")]
         [SerializeField] private int worldSeed = 12345;
         [SerializeField] private bool useRandomSeed = false;
-        [SerializeField] private bool generateOnStart = true;
+        [SerializeField] private bool generateOnStart = false; // Changed default to false to preserve existing terrain
+        [SerializeField] private bool preserveExistingTerrain = true; // If true, won't regenerate if terrain already has data
 
         public int CurrentSeed => worldSeed;
         #endregion
@@ -56,8 +57,65 @@ namespace Hearthbound.World
         {
             if (generateOnStart)
             {
+                // Check if we should preserve existing terrain
+                if (preserveExistingTerrain && TerrainAlreadyExists())
+                {
+                    Debug.Log("🌍 Terrain already exists - preserving it (set 'Generate On Start' or 'Preserve Existing Terrain' to false to regenerate)");
+                    return; // Don't regenerate
+                }
+                
                 GenerateWorld();
             }
+            else
+            {
+                Debug.Log("🌍 Generate On Start is disabled - terrain will not be regenerated automatically");
+            }
+        }
+        
+        /// <summary>
+        /// Check if terrain already has generated data
+        /// </summary>
+        private bool TerrainAlreadyExists()
+        {
+            TerrainGenerator terrainGen = FindObjectOfType<TerrainGenerator>();
+            if (terrainGen == null) return false;
+            
+            Terrain terrain = terrainGen.GetComponent<Terrain>();
+            if (terrain == null || terrain.terrainData == null) return false;
+            
+            // Check if terrain has been generated (has heightmap data)
+            int heightmapWidth = terrain.terrainData.heightmapResolution;
+            int heightmapHeight = terrain.terrainData.heightmapResolution;
+            
+            if (heightmapWidth <= 0 || heightmapHeight <= 0) return false;
+            
+            // Sample multiple points to see if terrain has actual data (not flat/default)
+            int samples = Mathf.Min(20, heightmapWidth);
+            bool hasVariation = false;
+            float firstHeight = -1f;
+            
+            for (int i = 0; i < samples; i++)
+            {
+                int x = (int)(heightmapWidth * (float)(i + 1) / (samples + 1));
+                int z = (int)(heightmapHeight * (float)(i + 1) / (samples + 1));
+                
+                if (x >= heightmapWidth) x = heightmapWidth - 1;
+                if (z >= heightmapHeight) z = heightmapHeight - 1;
+                
+                float height = terrain.terrainData.GetHeight(x, z);
+                
+                if (firstHeight < 0)
+                {
+                    firstHeight = height;
+                }
+                else if (Mathf.Abs(height - firstHeight) > 0.01f) // Has height variation
+                {
+                    hasVariation = true;
+                    break;
+                }
+            }
+            
+            return hasVariation || firstHeight > 0.1f; // Has data if there's variation or any significant height
         }
         #endregion
 

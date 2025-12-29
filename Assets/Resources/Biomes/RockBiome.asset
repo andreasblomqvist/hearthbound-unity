@@ -13,14 +13,14 @@ MonoBehaviour:
   m_Name: RockBiome
   m_EditorClassIdentifier: 
   biomeName: Rock
-  heightRange: {x: 0.5, y: 1}
-  temperatureRange: {x: 0, y: 0.5}
-  humidityRange: {x: 0, y: 0.5}
+  heightRange: {x: 0.2, y: 0.75}
+  temperatureRange: {x: 0.2, y: 0.8}
+  humidityRange: {x: 0, y: 0.4}
   humidity: 0.25
   temperature: 0.25
   heightMultiplier: 1.5
   terrainLayers:
   - diffuseTexture: {fileID: 0}
     tileSize: {x: 15, y: 15}
-    color: {r: 0.4, g: 0.4, b: 0.45, a: 1}
-  blendStrength: 3
+    color: {r: 0.7, g: 0.6, b: 0.4, a: 1}
+  blendStrength: 5

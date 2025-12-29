@@ -13,14 +13,14 @@ MonoBehaviour:
   m_Name: PlainsBiome
   m_EditorClassIdentifier: 
   biomeName: Plains
-  heightRange: {x: 0.1, y: 0.5}
-  temperatureRange: {x: 0.5, y: 0.9}
-  humidityRange: {x: 0.3, y: 0.7}
+  heightRange: {x: 0, y: 0.2}
+  temperatureRange: {x: 0.4, y: 0.8}
+  humidityRange: {x: 0, y: 0.5}
   humidity: 0.5
   temperature: 0.7
   heightMultiplier: 1
   terrainLayers:
   - diffuseTexture: {fileID: 0}
     tileSize: {x: 15, y: 15}
-    color: {r: 0.6, g: 0.7, b: 0.2, a: 1}
+    color: {r: 0.6, g: 0.9, b: 0.3, a: 1}
   blendStrength: 3

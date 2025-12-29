@@ -1,9 +1,21 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Hearthbound.Utilities;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace Hearthbound.World
 {
+    /// <summary>
+    /// How the river path is determined
+    /// </summary>
+    public enum RiverPathMode
+    {
+        Auto,    // Automatically generate path from mountains to plains
+        Manual   // Use custom path points provided by user
+    }
+
     /// <summary>
     /// Terrain Generator
     /// Generates procedural terrain using seed-based noise
@@ -15,6 +27,8 @@ namespace Hearthbound.World
         #region Components
         private Terrain terrain;
         private TerrainData terrainData;
+        private List<Vector2> lastGeneratedRiverPath; // Store river path for water generation
+        private List<GameObject> riverWaterObjects = new List<GameObject>(); // Store generated water objects
         #endregion
 
         #region Terrain Settings
@@ -52,21 +66,45 @@ namespace Hearthbound.World
         [SerializeField] private float peakSharpness = 1.3f;
         
         [Header("Rivers and Lakes")]
-        [Tooltip("River width threshold - Lower = narrower rivers, Higher = wider rivers")]
-        [Range(0.05f, 0.5f)]
-        [SerializeField] private float riverWidth = 0.25f;
+        [Tooltip("How to generate river path: Auto = automatic from mountains to plains, Manual = use custom points below")]
+        [SerializeField] private RiverPathMode riverPathMode = RiverPathMode.Auto;
         
-        [Tooltip("How deep rivers carve into terrain (in world units)")]
-        [Range(10f, 500f)]
-        [SerializeField] private float riverDepth = 40f;
+        [Tooltip("Disable WaterGenerator component when using river system (prevents flat water plane from covering carved rivers)")]
+        [SerializeField] private bool disableWaterGenerator = true;
         
-        [Tooltip("Lake threshold - Lower = more lakes, Higher = fewer lakes")]
-        [Range(0.1f, 0.5f)]
-        [SerializeField] private float lakeThreshold = 0.3f;
+        [Tooltip("Disable water biome textures when using river system (prevents blue water texture from being painted on terrain based on height)")]
+        [SerializeField] private bool disableWaterBiomes = true;
         
-        [Tooltip("How deep lake basins are (in world units)")]
-        [Range(10f, 500f)]
-        [SerializeField] private float lakeDepth = 30f;
+        [Tooltip("Generate water GameObjects along river paths and in lakes (creates visible water in carved areas)")]
+        [SerializeField] private bool generateRiverWater = true;
+        
+        [Tooltip("Water material to use for river/lake water (if null, creates default blue material)")]
+        [SerializeField] private Material riverWaterMaterial;
+        
+        [Tooltip("Manual river path points (in world coordinates). Only used if River Path Mode is set to Manual.")]
+        [SerializeField] private List<Vector2> customRiverPath = new List<Vector2>();
+        
+        [Tooltip("Manual river source point (for Manual mode). If empty, will use first point in customRiverPath")]
+        [SerializeField] private Vector2 manualRiverSource;
+        
+        [Tooltip("Manual lake center point (for Manual mode). If empty, will use last point in customRiverPath")]
+        [SerializeField] private Vector2 manualLakeCenter;
+        
+        [Tooltip("River width in world units")]
+        [Range(5f, 100f)]
+        [SerializeField] private float riverWidth = 40f;
+        
+        [Tooltip("How deep rivers carve into terrain (in world units). Higher values create deeper valleys.")]
+        [Range(50f, 600f)]
+        [SerializeField] private float riverDepth = 200f;
+        
+        [Tooltip("Lake radius in world units")]
+        [Range(100f, 300f)]
+        [SerializeField] private float lakeRadius = 150f;
+        
+        [Tooltip("How deep lake basins are (in world units). Higher values create deeper lake beds.")]
+        [Range(50f, 600f)]
+        [SerializeField] private float lakeDepth = 250f;
         
         [Header("Texture Splatting - Height Thresholds")]
         [SerializeField] private float waterHeight = 0.05f; // Below this = water/beach (lowered from 0.1 for less water coverage)
@@ -104,6 +142,39 @@ namespace Hearthbound.World
         {
             if (generateOnStart && WorldSeedManager.Instance != null)
             {
+                // Check if terrain already has data before regenerating
+                if (terrain != null && terrain.terrainData != null)
+                {
+                    // Sample terrain to see if it has actual data
+                    int width = terrain.terrainData.heightmapResolution;
+                    int height = terrain.terrainData.heightmapResolution;
+                    
+                    if (width > 0 && height > 0)
+                    {
+                        // Check a few sample points
+                        bool hasData = false;
+                        for (int i = 0; i < 10 && !hasData; i++)
+                        {
+                            int x = (int)(width * 0.1f * (i + 1));
+                            int z = (int)(height * 0.1f * (i + 1));
+                            if (x >= width) x = width - 1;
+                            if (z >= height) z = height - 1;
+                            
+                            float sampleHeight = terrain.terrainData.GetHeight(x, z);
+                            if (sampleHeight > 0.1f) // Has some height
+                            {
+                                hasData = true;
+                            }
+                        }
+                        
+                        if (hasData)
+                        {
+                            Debug.Log("TerrainGenerator: Terrain already has data - skipping generation (uncheck 'Generate On Start' to prevent this check)");
+                            return;
+                        }
+                    }
+                }
+                
                 GenerateTerrain(WorldSeedManager.Instance.CurrentSeed);
             }
         }
@@ -141,15 +212,36 @@ namespace Hearthbound.World
             {
                 terrainData = new TerrainData();
                 terrain.terrainData = terrainData;
+                // Only set size for new terrain
+                terrainData.heightmapResolution = heightmapResolution;
+                terrainData.size = new Vector3(terrainWidth, terrainHeight, terrainLength);
+                Debug.Log($"Terrain initialized (new): {terrainWidth}x{terrainLength}, Height: {terrainHeight}");
             }
             else
             {
                 terrainData = terrain.terrainData;
+                // Preserve existing terrain size to prevent flattening
+                Vector3 existingSize = terrainData.size;
+                int existingResolution = terrainData.heightmapResolution;
+                
+                // Only update if significantly different (to allow manual adjustments)
+                bool sizeChanged = Mathf.Abs(existingSize.x - terrainWidth) > 1f || 
+                                  Mathf.Abs(existingSize.z - terrainLength) > 1f;
+                bool resolutionChanged = existingResolution != heightmapResolution;
+                
+                if (sizeChanged || resolutionChanged)
+                {
+                    Debug.Log($"Terrain size/resolution changed - updating from {existingSize} (res: {existingResolution}) to {terrainWidth}x{terrainLength} (res: {heightmapResolution})");
+                    terrainData.heightmapResolution = heightmapResolution;
+                    // IMPORTANT: Preserve Y (height) to prevent flattening mountains!
+                    terrainData.size = new Vector3(terrainWidth, existingSize.y, terrainLength);
+                }
+                else
+                {
+                    // Preserve everything - don't modify existing terrain
+                    Debug.Log($"Terrain already initialized - preserving size: {existingSize} (res: {existingResolution})");
+                }
             }
-
-            // Set terrain size
-            terrainData.heightmapResolution = heightmapResolution;
-            terrainData.size = new Vector3(terrainWidth, terrainHeight, terrainLength);
             
             // Ensure TerrainCollider uses the same TerrainData
             TerrainCollider terrainCollider = GetComponent<TerrainCollider>();
@@ -158,8 +250,6 @@ namespace Hearthbound.World
                 terrainCollider.terrainData = terrainData;
                 Debug.Log("  Synced TerrainCollider with TerrainData");
             }
-            
-            Debug.Log($"Terrain initialized: {terrainWidth}x{terrainLength}, Height: {terrainHeight}");
         }
         #endregion
 
@@ -176,6 +266,12 @@ namespace Hearthbound.World
             
             Random.InitState(seed);
             
+            // Handle WaterGenerator based on river system settings
+            HandleWaterGenerator();
+            
+            // Clear any existing river water
+            ClearRiverWater();
+            
             // Generate heightmap
             GenerateHeightmap(seed);
             
@@ -185,13 +281,248 @@ namespace Hearthbound.World
             // Add detail layers (grass, rocks)
             GenerateDetailLayers(seed);
             
+            // Generate water along river paths if enabled
+            if (generateRiverWater && lastGeneratedRiverPath != null && lastGeneratedRiverPath.Count > 0)
+            {
+                GenerateRiverWater();
+            }
+            
             Debug.Log("Terrain generation complete!");
+        }
+        
+        /// <summary>
+        /// Enable/disable WaterGenerator based on river system settings
+        /// </summary>
+        private void HandleWaterGenerator()
+        {
+            if (!disableWaterGenerator)
+                return;
+            
+            // First, find and destroy any existing water planes in the scene
+            ClearAllWaterPlanes();
+            
+            // Find WaterGenerator component (could be on this GameObject or any parent/child)
+            WaterGenerator waterGen = GetComponent<WaterGenerator>();
+            if (waterGen == null)
+            {
+                // Also check parent/children
+                waterGen = GetComponentInParent<WaterGenerator>();
+                if (waterGen == null)
+                {
+                    waterGen = GetComponentInChildren<WaterGenerator>();
+                }
+            }
+            
+            // Also check in the scene (in case it's on a sibling GameObject)
+            if (waterGen == null)
+            {
+                waterGen = FindObjectOfType<WaterGenerator>();
+            }
+            
+            if (waterGen != null)
+            {
+                waterGen.enabled = false;
+                // Also clear any existing water
+                waterGen.ClearWater();
+                Debug.Log("🌊 WaterGenerator disabled (river system is handling water)");
+            }
+            else
+            {
+                // WaterGenerator not found - that's okay, just log it
+                Debug.Log("ℹ️ No WaterGenerator found to disable");
+            }
+        }
+        
+        /// <summary>
+        /// Clear all water plane GameObjects from the scene
+        /// </summary>
+        public void ClearAllWaterPlanes()
+        {
+            List<GameObject> waterObjects = new List<GameObject>();
+            WaterGenerator[] waterGens = new WaterGenerator[0];
+            
+            #if UNITY_EDITOR
+            // Method 1: Search ALL GameObjects in the scene (including inactive)
+            GameObject[] allObjects = Resources.FindObjectsOfTypeAll<GameObject>();
+            
+            foreach (GameObject obj in allObjects)
+            {
+                // Skip prefabs (assets, not scene instances)
+                if (PrefabUtility.IsPartOfPrefabAsset(obj))
+                    continue;
+                
+                // Skip if not in a scene
+                if (obj.scene.name == null)
+                    continue;
+                
+                // Check by name
+                if (obj != null && (obj.name == "Water" || obj.name.StartsWith("Water")))
+                {
+                    if (!waterObjects.Contains(obj))
+                    {
+                        waterObjects.Add(obj);
+                        Debug.Log($"Found water object by name: {obj.name} at path: {GetGameObjectPath(obj)}");
+                    }
+                }
+            }
+            
+            // Method 2: Find all WaterGenerator components (including inactive)
+            waterGens = FindObjectsOfType<WaterGenerator>(true);
+            foreach (WaterGenerator waterGen in waterGens)
+            {
+                if (waterGen != null)
+                {
+                    Debug.Log($"Found WaterGenerator component, calling ClearWater()");
+                    waterGen.ClearWater();
+                    
+                    // Also check children of WaterGenerator for water objects
+                    Transform waterGenTransform = waterGen.transform;
+                    for (int i = waterGenTransform.childCount - 1; i >= 0; i--)
+                    {
+                        Transform child = waterGenTransform.GetChild(i);
+                        if (child != null && child.gameObject != null)
+                        {
+                            if (child.name == "Water" || child.name.StartsWith("Water"))
+                            {
+                                if (!waterObjects.Contains(child.gameObject))
+                                {
+                                    waterObjects.Add(child.gameObject);
+                                    Debug.Log($"Found water object as child of WaterGenerator: {GetGameObjectPath(child.gameObject)}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Method 3: Find all Plane meshes that look like water (more aggressive search)
+            MeshFilter[] meshFilters = FindObjectsOfType<MeshFilter>(true);
+            foreach (MeshFilter mf in meshFilters)
+            {
+                if (mf == null || mf.sharedMesh == null)
+                    continue;
+                
+                string meshName = mf.sharedMesh.name;
+                if (meshName.Contains("Plane") || meshName == "Quad" || meshName.StartsWith("Plane"))
+                {
+                    MeshRenderer mr = mf.GetComponent<MeshRenderer>();
+                    if (mr != null)
+                    {
+                        bool isWaterLike = false;
+                        
+                        // Check material
+                        if (mr.sharedMaterial != null)
+                        {
+                            Material mat = mr.sharedMaterial;
+                            Color matColor = mat.color;
+                            
+                            // Blue materials (lower threshold to catch more)
+                            if (matColor.b > 0.3f && matColor.b > matColor.r && matColor.b > matColor.g)
+                                isWaterLike = true;
+                            // Material name contains water or blue
+                            string matNameLower = mat.name.ToLower();
+                            if (matNameLower.Contains("water") || matNameLower.Contains("blue") || matNameLower.Contains("aqua"))
+                                isWaterLike = true;
+                        }
+                        
+                        // Large scale (water planes are scaled large - 100x100+ for 1000x1000 terrain)
+                        Vector3 scale = mf.transform.lossyScale;
+                        if (scale.x > 30f || scale.z > 30f)
+                        {
+                            isWaterLike = true;
+                            Debug.Log($"Found large plane (potential water): {mf.gameObject.name} at {GetGameObjectPath(mf.gameObject)}, scale: {scale.x:F1}x{scale.z:F1}");
+                        }
+                        
+                        // Check if it's at a low Y position (sea level)
+                        float yPos = mf.transform.position.y;
+                        if (yPos < 100f) // Water is usually at low elevation
+                            isWaterLike = true;
+                        
+                        // If GameObject name suggests water
+                        if (mf.gameObject.name.ToLower().Contains("water"))
+                            isWaterLike = true;
+                        
+                        if (isWaterLike && !waterObjects.Contains(mf.gameObject))
+                        {
+                            waterObjects.Add(mf.gameObject);
+                            Debug.Log($"Found water plane by mesh/material: {mf.gameObject.name} at path: {GetGameObjectPath(mf.gameObject)}");
+                        }
+                    }
+                }
+            }
+            #else
+            // Runtime fallback
+            GameObject[] allObjects = FindObjectsOfType<GameObject>();
+            foreach (GameObject obj in allObjects)
+            {
+                if (obj != null && (obj.name == "Water" || obj.name.StartsWith("Water")))
+                {
+                    if (!waterObjects.Contains(obj))
+                        waterObjects.Add(obj);
+                }
+            }
+            waterGens = FindObjectsOfType<WaterGenerator>(true);
+            foreach (WaterGenerator waterGen in waterGens)
+            {
+                if (waterGen != null)
+                    waterGen.ClearWater();
+            }
+            #endif
+            
+            // Destroy all found water objects
+            int destroyedCount = 0;
+            foreach (GameObject waterObj in waterObjects)
+            {
+                if (waterObj != null)
+                {
+                    Debug.Log($"🗑️ Destroying water object: {GetGameObjectPath(waterObj)}");
+                    #if UNITY_EDITOR
+                    if (!Application.isPlaying)
+                    {
+                        DestroyImmediate(waterObj);
+                        destroyedCount++;
+                    }
+                    else
+                    #endif
+                    {
+                        Destroy(waterObj);
+                        destroyedCount++;
+                    }
+                }
+            }
+            
+            if (destroyedCount > 0 || waterGens.Length > 0)
+            {
+                Debug.Log($"🗑️ Successfully removed {destroyedCount} water plane(s) from scene");
+            }
+            else
+            {
+                Debug.LogWarning("⚠️ No water planes found to remove. Check Console for search details.");
+            }
+        }
+        
+        /// <summary>
+        /// Get full hierarchy path for a GameObject (for debugging)
+        /// </summary>
+        private string GetGameObjectPath(GameObject obj)
+        {
+            if (obj == null)
+                return "null";
+            
+            string path = obj.name;
+            Transform current = obj.transform.parent;
+            while (current != null)
+            {
+                path = current.name + "/" + path;
+                current = current.parent;
+            }
+            return path;
         }
 
         private void GenerateHeightmap(int seed)
         {
             Debug.Log("  Generating heightmap...");
-            Debug.Log($"  Water Carving Params: riverWidth={riverWidth:F3}, riverDepth={riverDepth:F1}, lakeThreshold={lakeThreshold:F3}, lakeDepth={lakeDepth:F1}");
+            Debug.Log($"  Water Carving Params: riverWidth={riverWidth:F1}, riverDepth={riverDepth:F1}, lakeRadius={lakeRadius:F1}, lakeDepth={lakeDepth:F1}");
             
             int width = terrainData.heightmapResolution;
             int height = terrainData.heightmapResolution;
@@ -200,6 +531,79 @@ namespace Hearthbound.World
             // Calculate world space size per heightmap pixel
             float scaleX = terrainWidth / (float)width;
             float scaleZ = terrainLength / (float)height;
+
+            // Generate or use custom river path
+            List<Vector2> riverPath = null;
+            
+            if (riverPathMode == RiverPathMode.Manual)
+            {
+                if (customRiverPath != null && customRiverPath.Count > 0)
+                {
+                    // Use manually specified path points
+                    riverPath = new List<Vector2>(customRiverPath);
+                    Debug.Log($"🌊 Using manual river path with {riverPath.Count} points");
+                }
+                else if (manualRiverSource != Vector2.zero && manualLakeCenter != Vector2.zero)
+                {
+                    // Generate path between manual source and lake center
+                    Debug.Log($"🌊 Generating river path from manual points: Source=({manualRiverSource.x:F1},{manualRiverSource.y:F1}), Lake=({manualLakeCenter.x:F1},{manualLakeCenter.y:F1})");
+                    riverPath = RiverPathGenerator.GenerateMeanderingPath(manualRiverSource, manualLakeCenter, seed);
+                    Debug.Log($"✅ Generated river path with {riverPath.Count} points from ({manualRiverSource.x:F1},{manualRiverSource.y:F1}) to ({manualLakeCenter.x:F1},{manualLakeCenter.y:F1})");
+                    if (riverPath == null || riverPath.Count == 0)
+                    {
+                        Debug.LogError("❌ River path generation returned empty/null path!");
+                    }
+                    else
+                    {
+                        Debug.Log($"   First point: ({riverPath[0].x:F1}, {riverPath[0].y:F1}), Last point: ({riverPath[riverPath.Count - 1].x:F1}, {riverPath[riverPath.Count - 1].y:F1})");
+                    }
+                }
+                else
+                {
+                    // Manual mode selected but points not set - fall back to auto mode
+                    float sourceX = manualRiverSource.x;
+                    float sourceY = manualRiverSource.y;
+                    float lakeX = manualLakeCenter.x;
+                    float lakeY = manualLakeCenter.y;
+                    Debug.LogWarning($"⚠️ Manual mode selected but points not set. Source=({sourceX:F1},{sourceY:F1}), Lake=({lakeX:F1},{lakeY:F1}). Falling back to Auto mode.");
+                    
+                    System.Func<float, float, float> getContinentalMaskFunc = (x, z) => 
+                        NoiseGenerator.GetContinentalMask(x, z, seed, continentalMaskFrequency);
+
+                    riverPath = RiverPathGenerator.GenerateRiverPath(
+                        seed, 
+                        terrainWidth, 
+                        terrainLength, 
+                        getContinentalMaskFunc
+                    );
+                    Debug.Log($"🌊 Auto-generated river path (fallback) with {riverPath.Count} points");
+                }
+            }
+            else // Auto mode
+            {
+                // Auto mode: automatically generate path from mountains to plains
+                System.Func<float, float, float> getContinentalMaskFunc = (x, z) => 
+                    NoiseGenerator.GetContinentalMask(x, z, seed, continentalMaskFrequency);
+
+                riverPath = RiverPathGenerator.GenerateRiverPath(
+                    seed, 
+                    terrainWidth, 
+                    terrainLength, 
+                    getContinentalMaskFunc
+                );
+
+                Debug.Log($"🌊 Auto-generated river path with {riverPath.Count} points");
+            }
+
+            // Ensure riverPath is never null (fallback to empty list)
+            if (riverPath == null)
+            {
+                Debug.LogError("❌ River path is null! Creating empty path.");
+                riverPath = new List<Vector2>();
+            }
+            
+            // Store river path for water generation
+            lastGeneratedRiverPath = riverPath;
 
             // Calculate theoretical max possible height (before water carving)
             // Updated to match the new height formula in GetTerrainHeight
@@ -231,7 +635,8 @@ namespace Hearthbound.World
                         worldX, worldZ, seed,
                         baseHeight, hillHeight, mountainHeight,
                         continentalThreshold, warpStrength, mountainFrequency, peakSharpness, continentalMaskFrequency,
-                        riverWidth, riverDepth, lakeThreshold, lakeDepth
+                        riverPath,
+                        riverWidth, riverDepth, lakeRadius, lakeDepth
                     );
                     
                     // Track actual min/max
@@ -284,9 +689,7 @@ namespace Hearthbound.World
                         Debug.Log($"   hillMask={testHillMask:F3}, mountainMask={testMountainMask:F3}");
                         Debug.Log($"   plains={testPlainsHeight:F2}, hills={testHillsHeight:F2}, mountains={testMountainsHeight:F2}");
                         // Add river and lake information
-                        float sampleRiverNoise = NoiseGenerator.GetRiverNoise(sampleWorldX, sampleWorldZ, seed);
-                        float sampleLakeNoise = NoiseGenerator.GetLakeNoise(sampleWorldX, sampleWorldZ, seed);
-                        float sampleWaterCarving = NoiseGenerator.GetWaterCarving(sampleWorldX, sampleWorldZ, seed, riverWidth, riverDepth, lakeThreshold, lakeDepth);
+                        float sampleWaterCarving = NoiseGenerator.GetWaterCarvingFromPath(sampleWorldX, sampleWorldZ, riverPath, riverWidth, riverDepth, lakeRadius, lakeDepth);
                         float testTotalAfterCarving = Mathf.Max(0f, testTotal - sampleWaterCarving);
                         
                         Debug.Log($"   Manual TOTAL (before carving)={testTotal:F2}, Manual TOTAL (after carving)={testTotalAfterCarving:F2}");
@@ -295,10 +698,8 @@ namespace Hearthbound.World
                         Debug.Log($"   Height Params: baseHeight={baseHeight:F1}, hillHeight={hillHeight:F1}, mountainHeight={mountainHeight:F1}, peakSharpness={peakSharpness:F2}");
                         
                         Debug.Log($"[TerrainGenerator] Rivers and Lakes at world ({sampleWorldX:F1}, {sampleWorldZ:F1}):");
-                        Debug.Log($"   riverNoise={sampleRiverNoise:F3} (threshold: {riverWidth:F3}, {(sampleRiverNoise < riverWidth ? "RIVER" : "no river")})");
-                        Debug.Log($"   lakeNoise={sampleLakeNoise:F3} (threshold: {lakeThreshold:F3}, {(sampleLakeNoise < lakeThreshold ? "LAKE" : "no lake")})");
                         Debug.Log($"   waterCarving={sampleWaterCarving:F2}, heightBeforeCarving={testTotal:F2}, heightAfterCarving={testTotalAfterCarving:F2}");
-                        Debug.Log($"   Water Params: riverWidth={riverWidth:F3}, riverDepth={riverDepth:F1}, lakeThreshold={lakeThreshold:F3}, lakeDepth={lakeDepth:F1}");
+                        Debug.Log($"   Water Params: riverWidth={riverWidth:F1}, riverDepth={riverDepth:F1}, lakeRadius={lakeRadius:F1}, lakeDepth={lakeDepth:F1}");
                         
                         loggedSample = true;
                     }
@@ -470,8 +871,8 @@ namespace Hearthbound.World
                         }
                     }
                     // Force water biome for areas below water threshold (rivers/lakes)
-                    // BUT only if NOT a mountain area
-                    else if (height < waterHeight)
+                    // BUT only if NOT a mountain area AND water biomes are enabled
+                    else if (height < waterHeight && !disableWaterBiomes)
                     {
                         // Find water biome and give it high priority
                         BiomeData waterBiome = null;
@@ -501,6 +902,23 @@ namespace Hearthbound.World
                             {
                                 biomeWeights[otherBiome] *= 0.1f; // Reduce other biomes
                             }
+                        }
+                    }
+                    // If water biomes are disabled, remove water biome from low areas too
+                    else if (height < waterHeight && disableWaterBiomes)
+                    {
+                        BiomeData waterBiomeToRemove = null;
+                        foreach (var kvp in biomeWeights)
+                        {
+                            if (kvp.Key != null && kvp.Key.biomeName == "Water")
+                            {
+                                waterBiomeToRemove = kvp.Key;
+                                break;
+                            }
+                        }
+                        if (waterBiomeToRemove != null)
+                        {
+                            biomeWeights.Remove(waterBiomeToRemove);
                         }
                     }
 
@@ -748,8 +1166,8 @@ namespace Hearthbound.World
         {
             float[] weights = new float[6];
             
-            // Layer 0: Water (very low elevation)
-            if (height < waterHeight)
+            // Layer 0: Water (very low elevation) - only if water biomes are enabled
+            if (height < waterHeight && !disableWaterBiomes)
                 weights[0] = 1f;
             
             // Layer 1: Plains/Grass (low elevation, gentle slope)
@@ -799,8 +1217,8 @@ namespace Hearthbound.World
             float moisture = rawHumidity * tempHumidityMultiplier;
             moisture = Mathf.Clamp01(moisture);
 
-            // Layer 0: Water (very low elevation, high moisture areas)
-            if (height < waterHeight)
+            // Layer 0: Water (very low elevation, high moisture areas) - only if water biomes are enabled
+            if (height < waterHeight && !disableWaterBiomes)
             {
                 weights[0] = 1f;
                 return weights; // Water takes priority
@@ -945,49 +1363,50 @@ namespace Hearthbound.World
 
         private void CreateDefaultTerrainLayers()
         {
-            Debug.Log("  Creating default terrain layers with biome colors...");
+            Debug.Log("  Creating default terrain layers with distinct biome colors...");
             
             // Create 6 terrain layers for different biomes
+            // Using highly distinct colors for better visibility
             TerrainLayer[] layers = new TerrainLayer[6];
             
-            // Layer 0: Water/Beach (blue/sand)
+            // Layer 0: Water/Beach - Bright Cyan/Blue (more saturated)
             layers[0] = new TerrainLayer();
-            layers[0].diffuseTexture = CreateColoredTexture(new Color(0.2f, 0.4f, 0.7f), "Water"); // Blue
+            layers[0].diffuseTexture = CreateColoredTexture(new Color(0.1f, 0.5f, 0.9f), "Water");
             layers[0].tileSize = new Vector2(15, 15);
             layers[0].diffuseTexture.name = "WaterTexture";
             
-            // Layer 1: Plains/Grass (green)
+            // Layer 1: Plains/Grass - Yellow-Green (light, distinct from forest)
             layers[1] = new TerrainLayer();
-            layers[1].diffuseTexture = CreateColoredTexture(new Color(0.3f, 0.7f, 0.3f), "Plains"); // Bright green
+            layers[1].diffuseTexture = CreateColoredTexture(new Color(0.6f, 0.9f, 0.3f), "Plains");
             layers[1].tileSize = new Vector2(15, 15);
             layers[1].diffuseTexture.name = "PlainsTexture";
             
-            // Layer 2: Forest (dark green)
+            // Layer 2: Forest - Deep Saturated Green (very dark, distinct from plains)
             layers[2] = new TerrainLayer();
-            layers[2].diffuseTexture = CreateColoredTexture(new Color(0.1f, 0.4f, 0.1f), "Forest"); // Dark green
+            layers[2].diffuseTexture = CreateColoredTexture(new Color(0.05f, 0.5f, 0.15f), "Forest");
             layers[2].tileSize = new Vector2(15, 15);
             layers[2].diffuseTexture.name = "ForestTexture";
             
-            // Layer 3: Rock/Mountains (grey)
+            // Layer 3: Rock/Mountains - Tan/Brown (instead of grey, more visible)
             layers[3] = new TerrainLayer();
-            layers[3].diffuseTexture = CreateColoredTexture(new Color(0.5f, 0.5f, 0.5f), "Rock"); // Grey
+            layers[3].diffuseTexture = CreateColoredTexture(new Color(0.7f, 0.6f, 0.4f), "Rock");
             layers[3].tileSize = new Vector2(15, 15);
             layers[3].diffuseTexture.name = "RockTexture";
             
-            // Layer 4: Snow (white/light blue)
+            // Layer 4: Snow - Pure White (maximum visibility)
             layers[4] = new TerrainLayer();
-            layers[4].diffuseTexture = CreateColoredTexture(new Color(0.9f, 0.95f, 1f), "Snow"); // Light blue-white
+            layers[4].diffuseTexture = CreateColoredTexture(new Color(1.0f, 1.0f, 1.0f), "Snow");
             layers[4].tileSize = new Vector2(15, 15);
             layers[4].diffuseTexture.name = "SnowTexture";
             
-            // Layer 5: Dirt (brown - transition)
+            // Layer 5: Dirt - Dark Brown (distinct transition color)
             layers[5] = new TerrainLayer();
-            layers[5].diffuseTexture = CreateColoredTexture(new Color(0.4f, 0.3f, 0.2f), "Dirt"); // Brown
+            layers[5].diffuseTexture = CreateColoredTexture(new Color(0.3f, 0.2f, 0.1f), "Dirt");
             layers[5].tileSize = new Vector2(15, 15);
             layers[5].diffuseTexture.name = "DirtTexture";
 
             terrainData.terrainLayers = layers;
-            Debug.Log("  Terrain layers created: Water, Plains, Forest, Rock, Snow, Dirt");
+            Debug.Log("  Terrain layers created with distinct colors: Water (Cyan), Plains (Yellow-Green), Forest (Deep Green), Rock (Tan), Snow (White), Dirt (Dark Brown)");
         }
 
         /// <summary>
@@ -1032,6 +1451,12 @@ namespace Hearthbound.World
         public void ClearTerrain()
         {
             Debug.Log("Clearing terrain...");
+            
+            // Clear water planes first
+            ClearAllWaterPlanes();
+            
+            // Clear river water
+            ClearRiverWater();
             
             // Ensure terrain is initialized
             EnsureTerrainInitialized();
@@ -1245,6 +1670,300 @@ namespace Hearthbound.World
         public void SetPeakSharpness(float value) => peakSharpness = value;
         #endregion
 
+        /// <summary>
+        /// Generate water GameObjects along the river path and in the lake
+        /// </summary>
+        private void GenerateRiverWater()
+        {
+            if (lastGeneratedRiverPath == null || lastGeneratedRiverPath.Count < 2)
+            {
+                Debug.LogWarning("⚠️ Cannot generate river water: No valid river path");
+                return;
+            }
+            
+            EnsureTerrainInitialized();
+            if (terrain == null || terrainData == null)
+                return;
+            
+            Vector3 terrainPos = terrain.transform.position;
+            
+            // Generate a single continuous mesh for the entire river
+            GameObject riverWaterMesh = CreateRiverWaterMesh(terrainPos);
+            if (riverWaterMesh != null)
+            {
+                riverWaterObjects.Add(riverWaterMesh);
+            }
+            
+            // Generate circular lake at the end
+            if (lastGeneratedRiverPath.Count > 0)
+            {
+                Vector2 lakeCenter = RiverPathGenerator.GetLakeCenter(lastGeneratedRiverPath);
+                Vector3 lakeCenterWorld = new Vector3(lakeCenter.x, 0, lakeCenter.y) + terrainPos;
+                // Note: terrain.SampleHeight returns the height AFTER carving, so it's already at the bottom of the lake
+                float terrainLakeHeight = terrain.SampleHeight(lakeCenterWorld);
+                
+                // Raise water higher to be more visible in the carved basin
+                float lakeHeight = terrainLakeHeight + 2.0f;
+                
+                // Make lake slightly larger for better visual coverage
+                GameObject lakeWater = CreateCircularLake(lakeCenterWorld + Vector3.up * lakeHeight, lakeRadius * 1.1f);
+                if (lakeWater != null)
+                {
+                    riverWaterObjects.Add(lakeWater);
+                }
+            }
+            
+            Debug.Log($"💧 Generated {riverWaterObjects.Count} water objects along river path (1 continuous mesh + lake)");
+        }
+        
+        /// <summary>
+        /// Create a single continuous mesh for the entire river path
+        /// </summary>
+        private GameObject CreateRiverWaterMesh(Vector3 terrainPos)
+        {
+            if (lastGeneratedRiverPath == null || lastGeneratedRiverPath.Count < 2)
+                return null;
+            
+            GameObject riverWater = new GameObject("RiverWater");
+            riverWater.transform.SetParent(transform);
+            
+            MeshFilter mf = riverWater.AddComponent<MeshFilter>();
+            MeshRenderer mr = riverWater.AddComponent<MeshRenderer>();
+            
+            // Build vertices and triangles for the entire river
+            List<Vector3> vertices = new List<Vector3>();
+            List<int> triangles = new List<int>();
+            List<Vector2> uvs = new List<Vector2>();
+            
+            float halfWidth = riverWidth * 0.6f; // Slightly wider for better coverage
+            
+            // Generate vertices for each segment
+            for (int i = 0; i < lastGeneratedRiverPath.Count; i++)
+            {
+                Vector2 pathPoint = lastGeneratedRiverPath[i];
+                Vector3 worldPos = new Vector3(pathPoint.x, 0, pathPoint.y) + terrainPos;
+                
+                // Sample terrain height at this point
+                float terrainHeight = terrain.SampleHeight(worldPos);
+                // Raise water higher to be more visible in the carved valley
+                float waterHeight = terrainHeight + 2.0f;
+                
+                Vector3 centerVertex = worldPos + Vector3.up * waterHeight;
+                
+                // Calculate direction for this point
+                Vector3 direction = Vector3.forward;
+                if (i < lastGeneratedRiverPath.Count - 1)
+                {
+                    Vector2 nextPoint = lastGeneratedRiverPath[i + 1];
+                    Vector3 nextWorld = new Vector3(nextPoint.x, 0, nextPoint.y) + terrainPos;
+                    direction = (nextWorld - worldPos).normalized;
+                }
+                else if (i > 0)
+                {
+                    Vector2 prevPoint = lastGeneratedRiverPath[i - 1];
+                    Vector3 prevWorld = new Vector3(prevPoint.x, 0, prevPoint.y) + terrainPos;
+                    direction = (worldPos - prevWorld).normalized;
+                }
+                
+                // Calculate perpendicular for width
+                Vector3 perpendicular = Vector3.Cross(Vector3.up, direction).normalized * halfWidth;
+                
+                // Add two vertices (left and right edge)
+                vertices.Add(centerVertex + perpendicular);
+                vertices.Add(centerVertex - perpendicular);
+                
+                // UV coordinates
+                float u = i / (float)(lastGeneratedRiverPath.Count - 1);
+                uvs.Add(new Vector2(u, 0));
+                uvs.Add(new Vector2(u, 1));
+            }
+            
+            // Build triangles connecting segments
+            for (int i = 0; i < lastGeneratedRiverPath.Count - 1; i++)
+            {
+                int baseIndex = i * 2;
+                
+                // First triangle: baseIndex, baseIndex+1, baseIndex+2
+                triangles.Add(baseIndex);
+                triangles.Add(baseIndex + 1);
+                triangles.Add(baseIndex + 2);
+                
+                // Second triangle: baseIndex+1, baseIndex+3, baseIndex+2
+                triangles.Add(baseIndex + 1);
+                triangles.Add(baseIndex + 3);
+                triangles.Add(baseIndex + 2);
+            }
+            
+            // Create and assign mesh
+            Mesh mesh = new Mesh();
+            mesh.name = "RiverWaterMesh";
+            mesh.vertices = vertices.ToArray();
+            mesh.triangles = triangles.ToArray();
+            mesh.uv = uvs.ToArray();
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            
+            mf.mesh = mesh;
+            
+            // Apply material
+            if (riverWaterMaterial != null)
+            {
+                mr.material = riverWaterMaterial;
+            }
+            else
+            {
+                Material waterMat = new Material(Shader.Find("Standard"));
+                waterMat.color = new Color(0.2f, 0.4f, 0.7f, 0.8f);
+                waterMat.SetFloat("_Metallic", 0f);
+                waterMat.SetFloat("_Glossiness", 0.8f);
+                waterMat.SetFloat("_Mode", 3);
+                waterMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                waterMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                waterMat.SetInt("_ZWrite", 0);
+                waterMat.DisableKeyword("_ALPHATEST_ON");
+                waterMat.EnableKeyword("_ALPHABLEND_ON");
+                waterMat.renderQueue = 3000;
+                mr.material = waterMat;
+            }
+            
+            return riverWater;
+        }
+        
+        /// <summary>
+        /// Create a water quad between two points (deprecated - use CreateRiverWaterMesh instead)
+        /// </summary>
+        private GameObject CreateWaterQuad(Vector3 start, Vector3 end, float width)
+        {
+            GameObject quad = new GameObject("RiverWater");
+            quad.transform.SetParent(transform);
+            
+            MeshFilter mf = quad.AddComponent<MeshFilter>();
+            MeshRenderer mr = quad.AddComponent<MeshRenderer>();
+            
+            // Create quad mesh
+            Mesh mesh = new Mesh();
+            Vector3 direction = (end - start).normalized;
+            Vector3 perpendicular = Vector3.Cross(Vector3.up, direction).normalized * width * 0.5f;
+            
+            Vector3[] vertices = new Vector3[4];
+            vertices[0] = start + perpendicular;
+            vertices[1] = start - perpendicular;
+            vertices[2] = end + perpendicular;
+            vertices[3] = end - perpendicular;
+            
+            int[] triangles = new int[] { 0, 1, 2, 2, 1, 3 };
+            Vector2[] uv = new Vector2[] { new Vector2(0, 0), new Vector2(0, 1), new Vector2(1, 0), new Vector2(1, 1) };
+            
+            mesh.vertices = vertices;
+            mesh.triangles = triangles;
+            mesh.uv = uv;
+            mesh.RecalculateNormals();
+            mesh.name = "RiverWaterMesh";
+            
+            mf.mesh = mesh;
+            
+            // Apply material
+            if (riverWaterMaterial != null)
+            {
+                mr.material = riverWaterMaterial;
+            }
+            else
+            {
+                Material waterMat = new Material(Shader.Find("Standard"));
+                waterMat.color = new Color(0.2f, 0.4f, 0.7f, 0.8f);
+                waterMat.SetFloat("_Metallic", 0f);
+                waterMat.SetFloat("_Glossiness", 0.8f);
+                waterMat.SetFloat("_Mode", 3);
+                waterMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                waterMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                waterMat.SetInt("_ZWrite", 0);
+                waterMat.DisableKeyword("_ALPHATEST_ON");
+                waterMat.EnableKeyword("_ALPHABLEND_ON");
+                waterMat.renderQueue = 3000;
+                mr.material = waterMat;
+            }
+            
+            return quad;
+        }
+        
+        /// <summary>
+        /// Create a circular lake
+        /// </summary>
+        private GameObject CreateCircularLake(Vector3 center, float radius)
+        {
+            GameObject lake = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            lake.name = "LakeWater";
+            lake.transform.SetParent(transform);
+            lake.transform.position = center;
+            lake.transform.localScale = new Vector3(radius * 2f, 0.1f, radius * 2f);
+            
+            // Remove collider (or keep it if you want water physics)
+            Collider col = lake.GetComponent<Collider>();
+            if (col != null)
+            {
+                #if UNITY_EDITOR
+                if (!Application.isPlaying)
+                {
+                    DestroyImmediate(col);
+                }
+                else
+                #endif
+                {
+                    Destroy(col);
+                }
+            }
+            
+            MeshRenderer mr = lake.GetComponent<MeshRenderer>();
+            if (mr != null)
+            {
+                if (riverWaterMaterial != null)
+                {
+                    mr.material = riverWaterMaterial;
+                }
+                else
+                {
+                    Material waterMat = new Material(Shader.Find("Standard"));
+                    waterMat.color = new Color(0.2f, 0.4f, 0.7f, 0.8f);
+                    waterMat.SetFloat("_Metallic", 0f);
+                    waterMat.SetFloat("_Glossiness", 0.8f);
+                    waterMat.SetFloat("_Mode", 3);
+                    waterMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                    waterMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                    waterMat.SetInt("_ZWrite", 0);
+                    waterMat.DisableKeyword("_ALPHATEST_ON");
+                    waterMat.EnableKeyword("_ALPHABLEND_ON");
+                    waterMat.renderQueue = 3000;
+                    mr.material = waterMat;
+                }
+            }
+            
+            return lake;
+        }
+        
+        /// <summary>
+        /// Clear all generated river water objects
+        /// </summary>
+        private void ClearRiverWater()
+        {
+            foreach (GameObject waterObj in riverWaterObjects)
+            {
+                if (waterObj != null)
+                {
+                    #if UNITY_EDITOR
+                    if (!Application.isPlaying)
+                    {
+                        DestroyImmediate(waterObj);
+                    }
+                    else
+                    #endif
+                    {
+                        Destroy(waterObj);
+                    }
+                }
+            }
+            riverWaterObjects.Clear();
+        }
+        
         #region Debug
         [ContextMenu("Generate Terrain (Test Seed)")]
         private void DebugGenerateTerrain()
@@ -1256,6 +1975,12 @@ namespace Hearthbound.World
         private void DebugClearTerrain()
         {
             ClearTerrain();
+        }
+        
+        [ContextMenu("Clear All Water Planes")]
+        private void DebugClearWaterPlanes()
+        {
+            ClearAllWaterPlanes();
         }
 
         [ContextMenu("Print Terrain Info")]

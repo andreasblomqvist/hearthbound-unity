@@ -22,5 +22,5 @@ MonoBehaviour:
   terrainLayers:
   - diffuseTexture: {fileID: 0}
     tileSize: {x: 15, y: 15}
-    color: {r: 0.9, g: 0.95, b: 1, a: 1}
+    color: {r: 1, g: 1, b: 1, a: 1}
   blendStrength: 3

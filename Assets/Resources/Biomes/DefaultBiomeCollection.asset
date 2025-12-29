@@ -20,4 +20,4 @@ MonoBehaviour:
   - {fileID: 11400000, guid: e65e5bd6a366968469113645d133a0ab, type: 2}
   globalBlendFactor: 3
   useGlobalBlendFactor: 1
-  debugLogging: 0
+  debugLogging: 1

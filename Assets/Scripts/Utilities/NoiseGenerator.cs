@@ -1,4 +1,5 @@
 using UnityEngine;
+using Hearthbound.World;
 
 namespace Hearthbound.Utilities
 {
@@ -111,7 +112,8 @@ namespace Hearthbound.Utilities
             float baseHeight, float hillHeight, float mountainHeight,
             float continentalThreshold, float warpStrength, 
             float mountainFrequency, float peakSharpness, float continentalMaskFrequency,
-            float riverWidth, float riverDepth, float lakeThreshold, float lakeDepth)
+            System.Collections.Generic.List<Vector2> riverPath,
+            float riverWidth, float riverDepth, float lakeRadius, float lakeDepth)
         {
             // 1. Generate continental mask (very low frequency) to define where mountains appear
             float continentalMask = GetContinentalMask(x, y, seed, continentalMaskFrequency);
@@ -147,19 +149,16 @@ namespace Hearthbound.Utilities
             // 5. Combine layers - RAW height values (not normalized)
             float height = plainsHeight + hillsHeight + mountainsHeight;
             
-            // 6. Apply water carving (rivers and lakes)
-            // Reduce carving in mountain areas to prevent affecting mountain heights
-            float riverNoise = GetRiverNoise(x, y, seed);
-            float lakeNoise = GetLakeNoise(x, y, seed);
-            float waterCarving = GetWaterCarving(x, y, seed, riverWidth, riverDepth, lakeThreshold, lakeDepth);
+            // 6. Apply water carving using river path
+            float waterCarving = GetWaterCarvingFromPath(x, y, riverPath, riverWidth, riverDepth, lakeRadius, lakeDepth);
             
-            // Reduce water carving in mountain areas (mountains shouldn't have rivers/lakes carved into them)
-            // Use mountainMask to reduce carving - full carving in plains, reduced in hills, minimal in mountains
-            float mountainCarvingReduction = 1f - (mountainMask * 0.9f); // Reduce carving by up to 90% in mountain areas
+            
+            // Reduce water carving in mountain areas to prevent rivers cutting through peaks
+            float mountainCarvingReduction = 1f - (mountainMask * 0.9f);
             waterCarving *= mountainCarvingReduction;
             
             float heightBeforeCarving = height;
-            height = Mathf.Max(0f, height - waterCarving); // Subtract carving, but don't go below 0
+            height = Mathf.Max(0f, height - waterCarving);
             
             // DEBUG: Log detailed height breakdown (only log once per terrain generation)
             // Use a simple coordinate check that will definitely match during terrain generation
@@ -175,10 +174,8 @@ namespace Hearthbound.Utilities
                 Debug.Log($"   plains={plainsHeight:F2}, hills={hillsHeight:F2}, mountains={mountainsHeight:F2}, BEFORE_CARVING={heightBeforeCarving:F2}");
                 Debug.Log($"   Height Params: baseHeight={baseHeight:F1}, hillHeight={hillHeight:F1}, mountainHeight={mountainHeight:F1}");
                 Debug.Log($"[Rivers and Lakes] Water Features:");
-                Debug.Log($"   riverNoise={riverNoise:F3} (threshold: {riverWidth:F3}, {(riverNoise < riverWidth ? "RIVER" : "no river")})");
-                Debug.Log($"   lakeNoise={lakeNoise:F3} (threshold: {lakeThreshold:F3}, {(lakeNoise < lakeThreshold ? "LAKE" : "no lake")})");
                 Debug.Log($"   waterCarving={waterCarving:F2}, heightAfterCarving={height:F2}");
-                Debug.Log($"   Water Params: riverWidth={riverWidth:F3}, riverDepth={riverDepth:F1}, lakeThreshold={lakeThreshold:F3}, lakeDepth={lakeDepth:F1}");
+                Debug.Log($"   Water Params: riverWidth={riverWidth:F1}, riverDepth={riverDepth:F1}, lakeRadius={lakeRadius:F1}, lakeDepth={lakeDepth:F1}");
             }
             
             // NOTE: Power curve (peakSharpness) is now applied in TerrainGenerator after normalization
@@ -340,6 +337,51 @@ namespace Hearthbound.Utilities
             {
                 // Smooth carving for lake basins
                 float lakeStrength = 1f - (lakeNoise / lakeThreshold);
+                lakeCarving = lakeStrength * lakeDepth;
+            }
+            
+            // Return the maximum carving (rivers and lakes don't stack)
+            return Mathf.Max(riverCarving, lakeCarving);
+        }
+
+        /// <summary>
+        /// Calculate water carving effect using a deterministic river path
+        /// Carves terrain along the river path and creates a circular lake at the destination
+        /// </summary>
+        public static float GetWaterCarvingFromPath(float x, float y, 
+            System.Collections.Generic.List<Vector2> riverPath,
+            float riverWidth, float riverDepth, float lakeRadius, float lakeDepth)
+        {
+            if (riverPath == null || riverPath.Count == 0)
+                return 0f;
+            
+            float riverCarving = 0f;
+            float lakeCarving = 0f;
+            Vector2 point = new Vector2(x, y);
+            
+            // Calculate river carving based on distance to river path
+            float distanceToRiver = RiverPathGenerator.DistanceToRiverPath(point, riverPath);
+            
+            // Debug: Log river path info at sample points near the path
+            if (distanceToRiver < riverWidth * 3f && Random.value < 0.001f) // Sample 0.1% of points near river
+            {
+                Debug.Log($"[River Carving] At ({x:F1}, {y:F1}): distToRiver={distanceToRiver:F1}, riverWidth={riverWidth:F1}");
+            }
+            
+            if (distanceToRiver < riverWidth)
+            {
+                // Smooth carving based on distance from river center
+                float riverStrength = 1f - (distanceToRiver / riverWidth);
+                riverCarving = riverStrength * riverDepth;
+            }
+            
+            // Calculate lake carving (circular lake at end of river path)
+            Vector2 lakeCenter = RiverPathGenerator.GetLakeCenter(riverPath);
+            float distanceToLake = Vector2.Distance(point, lakeCenter);
+            if (distanceToLake < lakeRadius)
+            {
+                // Smooth carving for lake basin
+                float lakeStrength = 1f - (distanceToLake / lakeRadius);
                 lakeCarving = lakeStrength * lakeDepth;
             }
             
