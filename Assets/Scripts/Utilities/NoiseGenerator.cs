@@ -125,11 +125,6 @@ namespace Hearthbound.Utilities
             // Use higher multiplier to get more visible terrain
             float plainsHeight = Mathf.Max(baseNoise * baseHeight, baseHeight * 0.5f); // Minimum 50% of baseHeight everywhere
             
-            // DEBUG: Log noise values early to diagnose (only at one specific point)
-            if (x > 100 && y > 100 && x < 250 && y < 250 && (x == 200 && y == 200))
-            {
-                Debug.Log($"EARLY Noise Debug - baseNoise={baseNoise:F3}, continentalMask={continentalMask:F3}");
-            }
             
             // 3. Generate rolling hills using medium frequency fractal noise
             float hillNoise = GetFractalNoise(x, y, seed + 1000, 3, 0.003f, 2.2f, 0.5f);
@@ -160,23 +155,6 @@ namespace Hearthbound.Utilities
             float heightBeforeCarving = height;
             height = Mathf.Max(0f, height - waterCarving);
             
-            // DEBUG: Log detailed height breakdown (only log once per terrain generation)
-            // Use a simple coordinate check that will definitely match during terrain generation
-            // Check for a specific world coordinate that corresponds to the sample point in TerrainGenerator
-            // TerrainGenerator samples at (width/4, height/4), which for 513x513 = (128, 128)
-            // World coordinates: 128 * (1000/513) ≈ 249.5
-            if (Mathf.Abs(x - 250f) < 2f && Mathf.Abs(y - 250f) < 2f)
-            {
-                Debug.Log($"[NoiseGenerator] FULL Noise Values Debug at world ({x:F1}, {y:F1}):");
-                Debug.Log($"   baseNoise={baseNoise:F3}, hillNoise={hillNoise:F3}, mountainNoise={mountainRangeNoise:F3}");
-                Debug.Log($"   continentalMask={continentalMask:F3}, hillMask={hillMask:F3}, mountainMask={mountainMask:F3}");
-                Debug.Log($"[NoiseGenerator] Height Components:");
-                Debug.Log($"   plains={plainsHeight:F2}, hills={hillsHeight:F2}, mountains={mountainsHeight:F2}, BEFORE_CARVING={heightBeforeCarving:F2}");
-                Debug.Log($"   Height Params: baseHeight={baseHeight:F1}, hillHeight={hillHeight:F1}, mountainHeight={mountainHeight:F1}");
-                Debug.Log($"[Rivers and Lakes] Water Features:");
-                Debug.Log($"   waterCarving={waterCarving:F2}, heightAfterCarving={height:F2}");
-                Debug.Log($"   Water Params: riverWidth={riverWidth:F1}, riverDepth={riverDepth:F1}, lakeRadius={lakeRadius:F1}, lakeDepth={lakeDepth:F1}");
-            }
             
             // NOTE: Power curve (peakSharpness) is now applied in TerrainGenerator after normalization
             // This prevents the power curve from reducing already-low height values

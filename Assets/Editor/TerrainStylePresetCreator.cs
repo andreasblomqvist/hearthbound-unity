@@ -77,23 +77,50 @@ namespace Hearthbound.Editor
             return folder;
         }
 
-        private static TerrainStylePreset CreatePreset(string name, string description, 
-            float baseHeight, float hillHeight, float mountainHeight,
-            float snowHeight, float continentalThreshold, float warpStrength,
-            float mountainFrequency = 0.0008f, float peakSharpness = 1.3f)
+        private static TerrainStylePreset CreatePreset(
+            string name,
+            string description,
+            float terrainWidth,
+            float terrainLength,
+            float terrainHeight,
+            int heightmapResolution,
+            float baseHeight,
+            float hillHeight,
+            float mountainHeight,
+            float continentalThreshold,
+            float continentalMaskFreq,
+            float warpStrength,
+            float mountainFrequency = 0.0008f,
+            float peakSharpness = 1.0f)
         {
             TerrainStylePreset preset = ScriptableObject.CreateInstance<TerrainStylePreset>();
             preset.styleName = name;
             preset.description = description;
+
+            // Terrain size
+            preset.terrainWidth = terrainWidth;
+            preset.terrainLength = terrainLength;
+            preset.terrainHeight = terrainHeight;
+            preset.heightmapResolution = heightmapResolution;
+
+            // Heights
             preset.baseHeight = baseHeight;
             preset.hillHeight = hillHeight;
             preset.mountainHeight = mountainHeight;
-            preset.snowHeight = snowHeight;
+
+            // Noise parameters
             preset.continentalThreshold = continentalThreshold;
+            preset.continentalMaskFrequency = continentalMaskFreq;
             preset.warpStrength = warpStrength;
             preset.mountainFrequency = mountainFrequency;
             preset.peakSharpness = peakSharpness;
-            
+
+            // Biome heights (normalized 0-1)
+            preset.waterHeight = 0.05f;
+            preset.grassHeight = 0.3f;
+            preset.rockHeight = 0.6f;
+            preset.snowHeight = 0.7f;
+
             // Create exponential height curve
             preset.heightCurve = new AnimationCurve(
                 new Keyframe(0, 0),
@@ -101,11 +128,11 @@ namespace Hearthbound.Editor
                 new Keyframe(1, 1)
             );
             preset.heightCurve.SmoothTangents(1, 0.5f);
-            
+
             string folder = GetPresetFolder();
             string path = $"{folder}/{name.Replace(" ", "")}.asset";
             AssetDatabase.CreateAsset(preset, path);
-            
+
             Debug.Log($"✅ Created preset: {name}");
             return preset;
         }
@@ -113,54 +140,72 @@ namespace Hearthbound.Editor
         private static void CreateAlpineMountains()
         {
             CreatePreset(
-                "Alpine Mountains",
-                "Tall, sharp peaks with snow, valleys between ranges. Like Swiss Alps.",
-                50f, 120f, 600f, 0.70f, 0.5f, 150f
+                "Alpine Mountains 8K",
+                "8000x8000 terrain with tall, dramatic mountain ranges and vast plains.",
+                8000f, 8000f, 1200f, 513,  // Size
+                50f, 120f, 700f,  // Heights
+                0.55f, 0.00005f, 200f,  // Noise
+                0.0005f, 1.0f  // Mountain freq, sharpness
             );
         }
 
         private static void CreateRockyMountains()
         {
             CreatePreset(
-                "Rocky Mountains",
-                "Extensive mountain ranges, high elevation overall. Like Colorado.",
-                80f, 180f, 550f, 0.75f, 0.45f, 180f
+                "Rolling Hills 8K",
+                "8000x8000 terrain with gentle rolling hills and occasional peaks.",
+                8000f, 8000f, 800f, 513,  // Size
+                100f, 150f, 400f,  // Heights
+                0.6f, 0.00005f, 150f,  // Noise
+                0.0008f, 1.0f  // Mountain freq, sharpness
             );
         }
 
         private static void CreateAppalachianStyle()
         {
             CreatePreset(
-                "Appalachian Style",
-                "Older, more eroded mountains, less dramatic peaks.",
-                60f, 200f, 400f, 0.85f, 0.6f, 120f
+                "Vast Plains 8K",
+                "8000x8000 mostly flat terrain with distant mountains on horizon.",
+                8000f, 8000f, 1000f, 513,  // Size
+                80f, 100f, 600f,  // Heights
+                0.65f, 0.00003f, 250f,  // Noise
+                0.0005f, 1.0f  // Mountain freq, sharpness
             );
         }
 
         private static void CreatePlainsWithDistantMountains()
         {
             CreatePreset(
-                "Plains with Distant Mountains",
-                "Mostly flat with dramatic mountain ranges on horizon.",
-                40f, 100f, 650f, 0.68f, 0.65f, 200f
+                "Small Test Terrain",
+                "1000x1000 quick test terrain for rapid iteration.",
+                1000f, 1000f, 600f, 257,  // Size
+                50f, 100f, 300f,  // Heights
+                0.5f, 0.0003f, 150f,  // Noise
+                0.0008f, 1.3f  // Mountain freq, sharpness
             );
         }
 
         private static void CreateHimalayanStyle()
         {
             CreatePreset(
-                "Himalayan Style",
-                "Very high elevation overall, extreme peaks, lots of snow.",
-                100f, 200f, 800f, 0.60f, 0.55f, 140f
+                "Extreme Mountains 8K",
+                "8000x8000 with very tall peaks and dramatic elevation changes.",
+                8000f, 8000f, 1500f, 513,  // Size
+                100f, 200f, 1000f,  // Heights
+                0.5f, 0.00005f, 220f,  // Noise
+                0.0005f, 1.0f  // Mountain freq, sharpness
             );
         }
 
         private static void CreateFantasyRPG()
         {
             CreatePreset(
-                "Fantasy RPG (Recommended)",
-                "Varied, playable terrain for open world RPG. Balanced distribution.",
-                60f, 140f, 550f, 0.70f, 0.5f, 150f
+                "Balanced Fantasy 8K (Recommended)",
+                "8000x8000 balanced terrain perfect for open-world RPG exploration.",
+                8000f, 8000f, 1000f, 513,  // Size
+                80f, 140f, 600f,  // Heights
+                0.55f, 0.00005f, 200f,  // Noise
+                0.0005f, 1.0f  // Mountain freq, sharpness
             );
         }
     }

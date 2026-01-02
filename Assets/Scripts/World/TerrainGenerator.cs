@@ -118,7 +118,7 @@ namespace Hearthbound.World
         [SerializeField] private float forestMoistureMax = 1.0f;
         [SerializeField] private float forestTemperatureMin = 0.3f; // Forests prefer moderate temps
         [SerializeField] private float forestTemperatureMax = 0.7f;
-        
+
         [Header("Biome System")]
         [SerializeField] private BiomeCollection biomeCollection;
         [SerializeField] private bool useScriptableObjectBiomes = true; // Use BiomeCollection, otherwise use legacy system
@@ -126,7 +126,7 @@ namespace Hearthbound.World
         [SerializeField] private float biomeBlendDistance = 0.1f; // Legacy: How smoothly biomes blend
         [SerializeField] private float moistureFrequency = 0.003f;
         [SerializeField] private float temperatureFrequency = 0.002f;
-        
+
         [Header("Generation")]
         [SerializeField] private bool generateOnStart = false;
         #endregion
@@ -849,9 +849,9 @@ namespace Hearthbound.World
                     // Calculate biome weights using BiomeCollection
                     var biomeWeights = biomeCollection.CalculateBiomeWeights(moisture, temperature, height, slope);
 
-                    // Check if this is a mountain area: high slope OR height above rock threshold
-                    // Use more aggressive thresholds to prevent water on mountains
-                    bool isMountainArea = slope > steepSlope || height > rockHeight;
+                    // Check if this is a mountain area OR elevated area
+                    // Prevent water on ANY elevated terrain (not just mountains)
+                    bool isMountainArea = slope > steepSlope || height > rockHeight || height > 0.2f;
                     
                     // Remove water biome from mountain areas (even if it was calculated by biome system)
                     if (isMountainArea)
@@ -1668,6 +1668,26 @@ namespace Hearthbound.World
         public void SetWarpStrength(float value) => warpStrength = value;
         public void SetMountainFrequency(float value) => mountainFrequency = value;
         public void SetPeakSharpness(float value) => peakSharpness = value;
+
+        public void SetTerrainSize(float width, float length, float height)
+        {
+            terrainWidth = width;
+            terrainLength = length;
+            terrainHeight = height;
+            if (terrainData != null)
+            {
+                terrainData.size = new Vector3(width, height, length);
+            }
+        }
+
+        public void SetHeightmapResolution(int resolution)
+        {
+            heightmapResolution = resolution;
+            if (terrainData != null)
+            {
+                terrainData.heightmapResolution = resolution;
+            }
+        }
         #endregion
 
         /// <summary>

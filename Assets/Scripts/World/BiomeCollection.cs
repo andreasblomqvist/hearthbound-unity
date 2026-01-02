@@ -24,11 +24,7 @@ namespace Hearthbound.World
         
         [Tooltip("If true, uses global blend factor. If false, uses individual biome blend factors")]
         public bool useGlobalBlendFactor = true;
-        
-        [Header("Debug")]
-        [Tooltip("Enable detailed logging for biome weight calculations")]
-        public bool debugLogging = false;
-        
+
         /// <summary>
         /// Calculate biome weights for a given point
         /// Returns dictionary of biome -> weight (weights are NOT normalized to 1.0)
@@ -72,23 +68,6 @@ namespace Hearthbound.World
                 {
                     weights[biome] = weight;
                 }
-            }
-
-            // Debug logging if enabled
-            if (debugLogging && weights.Count > 0)
-            {
-                string log = $"Biome weights at h={height:F2}, t={temperature:F2}, m={humidity:F2}:\n";
-                float totalWeight = 0f;
-                foreach (var kvp in weights)
-                {
-                    totalWeight += kvp.Value;
-                }
-                foreach (var kvp in weights)
-                {
-                    float normalizedWeight = kvp.Value / totalWeight;
-                    log += $"  {kvp.Key.biomeName}: {normalizedWeight:P0}\n";
-                }
-                Debug.Log(log);
             }
 
             return weights;

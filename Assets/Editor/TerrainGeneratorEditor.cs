@@ -38,6 +38,29 @@ namespace Hearthbound.Editor
             DrawDefaultInspector();
 
             EditorGUILayout.Space(10);
+            EditorGUILayout.LabelField("Terrain Generation", EditorStyles.boldLabel);
+
+            EditorGUILayout.BeginHorizontal();
+
+            if (GUILayout.Button("Generate Terrain Now", GUILayout.Height(40)))
+            {
+                // Get seed from WorldSeedManager if available
+                WorldSeedManager seedManager = FindObjectOfType<WorldSeedManager>();
+                int seed = seedManager != null ? seedManager.CurrentSeed : 12345;
+
+                terrainGenerator.GenerateTerrain(seed);
+                Debug.Log($"✅ Terrain generated with seed: {seed}");
+            }
+
+            if (GUILayout.Button("Clear Terrain", GUILayout.Height(40)))
+            {
+                terrainGenerator.ClearTerrain();
+                Debug.Log("✅ Terrain cleared");
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(10);
             EditorGUILayout.LabelField("River Path Selection", EditorStyles.boldLabel);
 
             // Show current values

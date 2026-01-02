@@ -43,7 +43,6 @@ namespace Hearthbound.World
             Debug.Log($"✅ BiomeCollection found: {biomeCollection.name}");
             Debug.Log($"   Biomes count: {biomeCollection.biomes?.Length ?? 0}");
             Debug.Log($"   Global Blend Factor: {biomeCollection.globalBlendFactor}");
-            Debug.Log($"   Debug Logging: {biomeCollection.debugLogging}");
             
             // Test CalculateBiomeWeights with new system
             Debug.Log("\n--- Testing Biome Weight Calculation ---");
