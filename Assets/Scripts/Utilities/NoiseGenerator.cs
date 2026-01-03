@@ -155,11 +155,10 @@ namespace Hearthbound.Utilities
             // 1. Generate continental mask (very low frequency) to define where mountains appear
             float continentalMask = GetContinentalMask(x, y, seed, continentalMaskFrequency);
             
-            // 2. Generate base plains (relatively flat with gentle variation)
-            float baseNoise = GetNoise2D(x, y, seed, 0.001f);
-            // REDESIGNED: Flatter plains with gentle variation
-            // Use mostly flat base with gentle noise variation (40%)
-            float plainsHeight = baseHeight * 0.5f + (baseNoise * baseHeight * 0.4f);
+            // 2. Generate base plains with full height variation
+            // FIXED: Use full 0-100% of baseHeight range for natural variation
+            float baseNoise = GetNoise2D(x, y, seed, 0.0008f);
+            float plainsHeight = baseNoise * baseHeight;
             
             
             // 3. Generate gentle hills (reduced for flatter valleys)
@@ -193,8 +192,8 @@ namespace Hearthbound.Utilities
             // Combine ridged mountains with cliff enhancement
             float combinedMountainNoise = mountainRangeNoise + cliffNoise;
 
-            // REDESIGNED: Increased multiplier (1.5 → 2.0) for dramatic peaks
-            float mountainsHeight = combinedMountainNoise * mountainHeight * 2.0f * mountainMask;
+            // FIXED: Use 1.5x multiplier (matches normalization in HeightmapGenerator)
+            float mountainsHeight = combinedMountainNoise * mountainHeight * 1.5f * mountainMask;
             
             // 5. Combine layers - RAW height values (not normalized)
             float height = plainsHeight + hillsHeight + mountainsHeight;

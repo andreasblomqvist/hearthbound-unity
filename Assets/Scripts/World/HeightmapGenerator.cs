@@ -67,7 +67,8 @@ namespace Hearthbound.World
 
             // Calculate theoretical max possible height (before water carving)
             // Formula: baseHeight (full) + hillHeight (full) + mountainHeight (1.5x)
-            float theoreticalMaxHeight = (BaseHeight + HillHeight + MountainHeight * 1.5f) * 0.65f;
+            // FIXED: Removed 0.65x factor - masks already limit height naturally
+            float theoreticalMaxHeight = BaseHeight + HillHeight + (MountainHeight * 1.5f);
 
             // Account for maximum possible water carving in maxPossibleHeight calculation
             float maxWaterCarving = Mathf.Max(RiverDepth, LakeDepth);
@@ -148,13 +149,14 @@ namespace Hearthbound.World
             Debug.Log($"Continental Mask: {sampleContinentalMask:F3}, Threshold: {ContinentalThreshold:F3}");
 
             // Manual breakdown of height calculation to match what GetTerrainHeight does
-            float testBaseNoise = NoiseGenerator.GetNoise2D(sampleWorldX, sampleWorldZ, seed, 0.001f);
-            float testHillNoise = NoiseGenerator.GetFractalNoise(sampleWorldX, sampleWorldZ, seed + 1000, 3, 0.003f, 2.2f, 0.5f);
+            // FIXED: Updated to match actual formulas in NoiseGenerator.cs
+            float testBaseNoise = NoiseGenerator.GetNoise2D(sampleWorldX, sampleWorldZ, seed, 0.0008f);
+            float testHillNoise = NoiseGenerator.GetFractalNoise(sampleWorldX, sampleWorldZ, seed + 1000, 3, 0.003f, 2.0f, 0.5f);
             float testMountainNoise = NoiseGenerator.GetMountainRangeNoise(sampleWorldX, sampleWorldZ, seed, MountainFrequency, WarpStrength);
-            float testHillMask = Mathf.Max(0.5f, sampleContinentalMask);
-            float testMountainMask = Mathf.Max(0.3f, sampleContinentalMask * 0.8f);
-            float testPlainsHeight = Mathf.Max(testBaseNoise * BaseHeight, BaseHeight * 0.3f);
-            float testHillsHeight = testHillNoise * HillHeight * testHillMask;
+            float testHillMask = Mathf.Clamp01((sampleContinentalMask - 0.35f) * 2.86f);
+            float testMountainMask = Mathf.Clamp01((sampleContinentalMask - ContinentalThreshold) * 3.0f);
+            float testPlainsHeight = testBaseNoise * BaseHeight;
+            float testHillsHeight = testHillNoise * HillHeight * testHillMask * 0.7f;
             float testMountainsHeight = testMountainNoise * MountainHeight * 1.5f * testMountainMask;
             float testTotal = testPlainsHeight + testHillsHeight + testMountainsHeight;
 
