@@ -20,7 +20,7 @@ MonoBehaviour:
   heightmapResolution: 513
   baseHeight: 60
   hillHeight: 180
-  mountainHeight: 800
+  mountainHeight: 600
   heightCurve:
     serializedVersion: 2
     m_Curve:
@@ -54,12 +54,12 @@ MonoBehaviour:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
-  continentalThreshold: 0.6
-  continentalMaskFrequency: 0.00004
+  continentalThreshold: 0.4
+  continentalMaskFrequency: 0.0002
   warpStrength: 220
   mountainFrequency: 0.0005
   peakSharpness: 1
-  cliffStrength: 0.4
+  cliffStrength: 0.1
   cliffFrequency: 0.01
   cliffThreshold: 0.6
   applyErosion: 1
@@ -67,7 +67,7 @@ MonoBehaviour:
   erosionStrength: 0.3
   sedimentCapacity: 4
   evaporationRate: 0.05
-  waterHeight: 0.05
-  grassHeight: 0.3
-  rockHeight: 0.6
-  snowHeight: 0.7
+  waterHeight: 0.02
+  grassHeight: 0.5
+  rockHeight: 0.65
+  snowHeight: 0.75

@@ -151,6 +151,13 @@ namespace Hearthbound.World
 
         [Header("Generation")]
         [SerializeField] private bool generateOnStart = false;
+
+        [Header("Vegetation")]
+        [Tooltip("ForestGenerator component to place trees/bushes/rocks")]
+        [SerializeField] private ForestGenerator forestGenerator;
+
+        [Tooltip("Generate forests and vegetation automatically")]
+        [SerializeField] private bool generateVegetation = true;
         #endregion
 
         #region Unity Lifecycle
@@ -333,6 +340,18 @@ namespace Hearthbound.World
             }
 
             terrain.Flush();
+
+            // Generate vegetation (forests, bushes, rocks)
+            if (generateVegetation && forestGenerator != null)
+            {
+                Debug.Log("Generating vegetation...");
+                forestGenerator.GenerateForests(seed);
+            }
+            else if (generateVegetation && forestGenerator == null)
+            {
+                Debug.LogWarning("⚠️ Vegetation generation enabled but ForestGenerator not assigned!");
+            }
+
             Debug.Log("Terrain generation complete!");
         }
 

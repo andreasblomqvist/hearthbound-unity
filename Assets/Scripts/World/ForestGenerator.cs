@@ -38,7 +38,23 @@ namespace Hearthbound.World
         #endregion
 
         #region Generation Settings
-        [Header("Forest Generation")]
+        [Header("Vegetation Mode")]
+        [Tooltip("Use biome-fill for continuous coverage, or patch-based for discrete forest areas")]
+        [SerializeField] private bool useBiomeFillMode = true;
+
+        [Header("Biome-Fill Settings (Continuous Coverage)")]
+        [Tooltip("Distance between vegetation sample points (lower = more dense, slower)")]
+        [SerializeField] private float sampleSpacing = 8f;
+        [Tooltip("Tree density in Forest biomes (0-1)")]
+        [SerializeField] private float forestTreeDensity = 0.5f;
+        [Tooltip("Bush density in Forest biomes (0-1)")]
+        [SerializeField] private float forestBushDensity = 0.85f;
+        [Tooltip("Tree density in Plains biomes (0-1, sparse)")]
+        [SerializeField] private float plainsTreeDensity = 0.1f;
+        [Tooltip("Bush density in Plains biomes (0-1)")]
+        [SerializeField] private float plainsBushDensity = 0.6f;
+
+        [Header("Patch-Based Settings (Discrete Forests)")]
         [SerializeField] private int numberOfForests = 5;
         [SerializeField] private float forestRadius = 100f;
         [SerializeField] private float treeDensity = 0.3f; // 0-1
@@ -117,17 +133,12 @@ namespace Hearthbound.World
         #region Forest Generation
         public void GenerateForests(int seed)
         {
-            Debug.Log($"🌲 Generating {numberOfForests} forests with seed: {seed}");
-            
             // Always clear existing forests first
             ClearForests();
-            
+
             Random.InitState(seed);
-            
-            // Find forest locations (only in Forest biomes)
-            FindForestLocations(seed);
-            
-            // Ensure container exists before generating
+
+            // Ensure container exists
             if (forestsContainer == null)
             {
                 Transform existingContainer = transform.Find("Forests");
@@ -142,20 +153,34 @@ namespace Hearthbound.World
                     forestsContainer.SetParent(transform);
                 }
             }
-            
-            // Generate each forest
-            for (int i = 0; i < forestCenters.Count; i++)
+
+            // Choose generation mode
+            if (useBiomeFillMode)
             {
-                GenerateForest(forestCenters[i], seed + i * 1000);
+                Debug.Log($"🌲 Generating biome-fill vegetation with seed: {seed}");
+                FillBiomesWithVegetation(seed);
             }
-            
-            // Also generate plains vegetation (grass/bushes in Plains biomes)
-            GeneratePlainsVegetation(seed);
-            
-            // Also generate mountain rocks (rocks in Rock/Mountain biomes)
-            GenerateMountainRocks(seed);
-            
-            Debug.Log($"✅ Generated {forestCenters.Count} forests, {plainsPatches.Count} plains patches, {rockPatches.Count} rock patches with {generatedObjects.Count} objects");
+            else
+            {
+                Debug.Log($"🌲 Generating {numberOfForests} patch-based forests with seed: {seed}");
+
+                // Find forest locations (only in Forest biomes)
+                FindForestLocations(seed);
+
+                // Generate each forest patch
+                for (int i = 0; i < forestCenters.Count; i++)
+                {
+                    GenerateForest(forestCenters[i], seed + i * 1000);
+                }
+
+                // Also generate plains vegetation (grass/bushes in Plains biomes)
+                GeneratePlainsVegetation(seed);
+
+                // Also generate mountain rocks (rocks in Rock/Mountain biomes)
+                GenerateMountainRocks(seed);
+
+                Debug.Log($"✅ Generated {forestCenters.Count} forests, {plainsPatches.Count} plains patches, {rockPatches.Count} rock patches with {generatedObjects.Count} objects");
+            }
         }
 
         private void FindForestLocations(int seed)
@@ -374,33 +399,33 @@ namespace Hearthbound.World
             // If biome-based trees are disabled, use all trees
             if (!useBiomeBasedTrees)
             {
-                return treePrefabs.Length > 0 ? treePrefabs : defaultBiomeTrees;
+                return (treePrefabs != null && treePrefabs.Length > 0) ? treePrefabs : defaultBiomeTrees;
             }
 
             // Select trees based on biome name
             GameObject[] selectedTrees = null;
-            
+
             switch (biomeName.ToLower())
             {
                 case "forest":
-                    selectedTrees = forestBiomeTrees.Length > 0 ? forestBiomeTrees : treePrefabs;
+                    selectedTrees = (forestBiomeTrees != null && forestBiomeTrees.Length > 0) ? forestBiomeTrees : treePrefabs;
                     break;
                 case "plains":
-                    selectedTrees = plainsBiomeTrees.Length > 0 ? plainsBiomeTrees : treePrefabs;
+                    selectedTrees = (plainsBiomeTrees != null && plainsBiomeTrees.Length > 0) ? plainsBiomeTrees : treePrefabs;
                     break;
                 case "snow":
-                    selectedTrees = snowBiomeTrees.Length > 0 ? snowBiomeTrees : defaultBiomeTrees;
+                    selectedTrees = (snowBiomeTrees != null && snowBiomeTrees.Length > 0) ? snowBiomeTrees : defaultBiomeTrees;
                     break;
                 default:
                     // For other biomes (Rock, Water, Dirt), use default or all trees
-                    selectedTrees = defaultBiomeTrees.Length > 0 ? defaultBiomeTrees : treePrefabs;
+                    selectedTrees = (defaultBiomeTrees != null && defaultBiomeTrees.Length > 0) ? defaultBiomeTrees : treePrefabs;
                     break;
             }
 
             // Fallback: if selected array is empty, use main treePrefabs array
             if (selectedTrees == null || selectedTrees.Length == 0)
             {
-                selectedTrees = treePrefabs.Length > 0 ? treePrefabs : defaultBiomeTrees;
+                selectedTrees = (treePrefabs != null && treePrefabs.Length > 0) ? treePrefabs : defaultBiomeTrees;
             }
 
             return selectedTrees;
@@ -820,6 +845,187 @@ namespace Hearthbound.World
             {
                 Vector3 normal = terrainGenerator.GetNormalAtPosition(position);
                 obj.transform.up = Vector3.Lerp(Vector3.up, normal, 0.5f); // Blend for more natural look
+            }
+
+            generatedObjects.Add(obj);
+        }
+
+        /// <summary>
+        /// Fill entire biomes with vegetation (continuous coverage instead of patches)
+        /// </summary>
+        private void FillBiomesWithVegetation(int seed)
+        {
+            EnsureTerrainGenerator();
+            if (terrainGenerator == null) return;
+
+            Terrain terrain = terrainGenerator.GetComponent<Terrain>();
+            if (terrain == null) return;
+
+            Vector3 terrainSize = terrain.terrainData.size;
+            int treeCount = 0;
+            int bushCount = 0;
+            int rockCount = 0;
+
+            Debug.Log($"🌲 Filling biomes with vegetation (terrain size: {terrainSize.x}x{terrainSize.z}, spacing: {sampleSpacing})");
+
+            // Grid-based sampling across entire terrain
+            for (float x = sampleSpacing; x < terrainSize.x; x += sampleSpacing)
+            {
+                for (float z = sampleSpacing; z < terrainSize.z; z += sampleSpacing)
+                {
+                    // Add random offset for natural distribution
+                    float offsetX = Random.Range(-sampleSpacing * 0.5f, sampleSpacing * 0.5f);
+                    float offsetZ = Random.Range(-sampleSpacing * 0.5f, sampleSpacing * 0.5f);
+                    float worldX = x + offsetX;
+                    float worldZ = z + offsetZ;
+
+                    Vector3 position = new Vector3(worldX, 0, worldZ);
+
+                    // Get terrain height at this position
+                    float height = terrainGenerator.GetHeightAtPosition(position);
+                    position.y = height;
+
+                    // Get biome at this position first (need it for biome-specific slope checks)
+                    string biomeName = terrainGenerator.GetBiomeAtPosition(position, seed);
+                    if (string.IsNullOrEmpty(biomeName))
+                        continue;
+
+                    string biomeLower = biomeName.ToLower();
+
+                    // Check slope with biome-specific limits
+                    float slope = terrainGenerator.GetSlopeAtPosition(position);
+                    float slopeLimit = maxSlope;
+
+                    // Apply biome-specific slope limits
+                    switch (biomeLower)
+                    {
+                        case "forest":
+                            slopeLimit = 25f; // Forests need gentle slopes
+                            break;
+                        case "plains":
+                        case "grass":
+                            slopeLimit = 15f; // Plains are flat - very gentle slopes only
+                            break;
+                        case "rock":
+                        case "mountain":
+                            slopeLimit = 55f; // Rocks can be on steeper slopes
+                            break;
+                    }
+
+                    if (slope > slopeLimit)
+                        continue;
+
+                    // Use noise for density variation within biomes
+                    float densityNoise = NoiseGenerator.GetNoise2D(worldX, worldZ, seed + 7777, 0.05f);
+
+                    // Place vegetation based on biome type
+                    switch (biomeLower)
+                    {
+                        case "forest":
+                            // Dense trees and bushes in forest biome
+                            if (densityNoise < forestTreeDensity && treePrefabs != null && treePrefabs.Length > 0)
+                            {
+                                PlaceVegetationObject(position, treePrefabs, forestsContainer, seed);
+                                treeCount++;
+                            }
+                            else if (densityNoise < forestBushDensity && bushPrefabs != null && bushPrefabs.Length > 0)
+                            {
+                                PlaceVegetationObject(position, bushPrefabs, forestsContainer, seed);
+                                bushCount++;
+                            }
+                            break;
+
+                        case "plains":
+                        case "grass":
+                            // Sparse trees and bushes in plains
+                            if (densityNoise < plainsTreeDensity && treePrefabs != null && treePrefabs.Length > 0)
+                            {
+                                PlaceVegetationObject(position, treePrefabs, forestsContainer, seed);
+                                treeCount++;
+                            }
+                            else if (densityNoise < plainsBushDensity && bushPrefabs != null && bushPrefabs.Length > 0)
+                            {
+                                PlaceVegetationObject(position, bushPrefabs, forestsContainer, seed);
+                                bushCount++;
+                            }
+                            break;
+
+                        case "rock":
+                        case "mountain":
+                            // Rocks in mountain biome (only on moderately steep slopes, not extreme cliffs)
+                            if (densityNoise < 0.2f && rockPrefabs != null && rockPrefabs.Length > 0)
+                            {
+                                PlaceVegetationObject(position, rockPrefabs, forestsContainer, seed);
+                                rockCount++;
+                            }
+                            break;
+
+                        // Skip water and snow biomes (no vegetation)
+                        case "water":
+                        case "snow":
+                            break;
+                    }
+                }
+            }
+
+            int totalSamples = Mathf.RoundToInt((terrainSize.x / sampleSpacing) * (terrainSize.z / sampleSpacing));
+            Debug.Log($"✅ Biome-fill complete: {treeCount} trees, {bushCount} bushes, {rockCount} rocks");
+            Debug.Log($"   Sampled {totalSamples} positions across terrain (spacing: {sampleSpacing}m)");
+        }
+
+        /// <summary>
+        /// Place a single vegetation object (tree/bush/rock) at position
+        /// </summary>
+        private void PlaceVegetationObject(Vector3 position, GameObject[] prefabArray, Transform parent, int seed)
+        {
+            if (prefabArray == null || prefabArray.Length == 0)
+                return;
+
+            // Randomly select prefab from array
+            int prefabIndex = Random.Range(0, prefabArray.Length);
+            GameObject prefab = prefabArray[prefabIndex];
+
+            if (prefab == null)
+                return;
+
+            // Instantiate object
+            GameObject obj = Instantiate(prefab, position, Quaternion.identity, parent);
+
+            // Apply random rotation if enabled
+            if (randomRotation)
+            {
+                obj.transform.Rotate(Vector3.up, Random.Range(0f, 360f));
+            }
+
+            // Apply scale variation
+            if (scaleVariation > 0)
+            {
+                float scaleMultiplier = 1f + Random.Range(-scaleVariation, scaleVariation);
+                obj.transform.localScale *= scaleMultiplier;
+            }
+
+            // Snap to terrain surface (fixes floating prefabs)
+            // Use MeshFilter bounds (more reliable than Renderer bounds immediately after instantiation)
+            MeshFilter meshFilter = obj.GetComponentInChildren<MeshFilter>();
+            if (meshFilter != null && meshFilter.sharedMesh != null)
+            {
+                // Get local bounds of the mesh
+                Bounds localBounds = meshFilter.sharedMesh.bounds;
+
+                // Calculate the bottom of the mesh in local space
+                float localBottom = localBounds.min.y;
+
+                // Account for scale
+                float scaledBottom = localBottom * obj.transform.localScale.y;
+
+                // Adjust position so bottom sits on terrain
+                Vector3 newPos = obj.transform.position;
+                newPos.y -= scaledBottom;
+                obj.transform.position = newPos;
+            }
+            else
+            {
+                Debug.LogWarning($"⚠️ No MeshFilter found on {obj.name} - cannot snap to terrain");
             }
 
             generatedObjects.Add(obj);

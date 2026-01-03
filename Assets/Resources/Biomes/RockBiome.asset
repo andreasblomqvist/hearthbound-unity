@@ -20,7 +20,7 @@ MonoBehaviour:
   temperature: 0.25
   heightMultiplier: 1.5
   terrainLayers:
-  - diffuseTexture: {fileID: 0}
+  - diffuseTexture: {fileID: 2800000, guid: 3e8f839d23c8c7f42b81fc76f0dbeb9f, type: 3}
     tileSize: {x: 15, y: 15}
     color: {r: 0.7, g: 0.6, b: 0.4, a: 1}
   blendStrength: 5

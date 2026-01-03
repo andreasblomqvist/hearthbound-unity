@@ -136,6 +136,11 @@ namespace Hearthbound.World
             terrainGenerator.SetMountainFrequency(mountainFrequency);
             terrainGenerator.SetPeakSharpness(peakSharpness);
 
+            // Apply cliff parameters
+            terrainGenerator.SetCliffStrength(cliffStrength);
+            terrainGenerator.SetCliffFrequency(cliffFrequency);
+            terrainGenerator.SetCliffThreshold(cliffThreshold);
+
             // Apply terrain size
             terrainGenerator.SetTerrainSize(terrainWidth, terrainLength, terrainHeight);
             terrainGenerator.SetHeightmapResolution(heightmapResolution);
