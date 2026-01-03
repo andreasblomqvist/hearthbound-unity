@@ -892,6 +892,12 @@ namespace Hearthbound.World
                     float height = terrainGenerator.GetHeightAtPosition(position);
                     position.y = height;
 
+                    // Skip if too high (above tree line - no vegetation on peaks)
+                    float terrainMaxHeight = terrain.terrainData.size.y;
+                    float normalizedHeight = (height - terrain.transform.position.y) / terrainMaxHeight;
+                    if (normalizedHeight > 0.7f) // Above 70% height = no vegetation
+                        continue;
+
                     // Get biome at this position first (need it for biome-specific slope checks)
                     string biomeName = terrainGenerator.GetBiomeAtPosition(position, seed);
                     if (string.IsNullOrEmpty(biomeName))
