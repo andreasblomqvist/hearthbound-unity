@@ -44,15 +44,15 @@ namespace Hearthbound.World
 
         [Header("Biome-Fill Settings (Continuous Coverage)")]
         [Tooltip("Distance between vegetation sample points (lower = more dense, slower)")]
-        [SerializeField] private float sampleSpacing = 8f;
+        [SerializeField] private float sampleSpacing = 5f;
         [Tooltip("Tree density in Forest biomes (0-1)")]
-        [SerializeField] private float forestTreeDensity = 0.5f;
-        [Tooltip("Bush density in Forest biomes (0-1)")]
-        [SerializeField] private float forestBushDensity = 0.85f;
+        [SerializeField] private float forestTreeDensity = 0.7f;
+        [Tooltip("Bush/undergrowth density in Forest biomes (0-1, placed independently of trees)")]
+        [SerializeField] private float forestBushDensity = 0.5f;
         [Tooltip("Tree density in Plains biomes (0-1, sparse)")]
-        [SerializeField] private float plainsTreeDensity = 0.1f;
+        [SerializeField] private float plainsTreeDensity = 0.05f;
         [Tooltip("Bush density in Plains biomes (0-1)")]
-        [SerializeField] private float plainsBushDensity = 0.6f;
+        [SerializeField] private float plainsBushDensity = 0.4f;
 
         [Header("Patch-Based Settings (Discrete Forests)")]
         [SerializeField] private int numberOfForests = 5;
@@ -936,20 +936,22 @@ namespace Hearthbound.World
                         continue;
                     }
 
-                    // Use noise for density variation within biomes
-                    float densityNoise = NoiseGenerator.GetNoise2D(worldX, worldZ, seed + 7777, 0.05f);
+                    // Use different noise values for trees and bushes (allows layering)
+                    float treeNoise = NoiseGenerator.GetNoise2D(worldX, worldZ, seed + 7777, 0.05f);
+                    float bushNoise = NoiseGenerator.GetNoise2D(worldX, worldZ, seed + 8888, 0.07f);
 
                     // Place vegetation based on biome type
                     switch (biomeLower)
                     {
                         case "forest":
-                            // Dense trees and bushes in forest biome
-                            if (densityNoise < forestTreeDensity && treePrefabs != null && treePrefabs.Length > 0)
+                            // Dense layered forest - trees AND bushes independently
+                            if (treeNoise < forestTreeDensity && treePrefabs != null && treePrefabs.Length > 0)
                             {
                                 PlaceVegetationObject(position, treePrefabs, forestsContainer, seed);
                                 treeCount++;
                             }
-                            else if (densityNoise < forestBushDensity && bushPrefabs != null && bushPrefabs.Length > 0)
+                            // Bushes placed independently (not else-if) for undergrowth
+                            if (bushNoise < forestBushDensity && bushPrefabs != null && bushPrefabs.Length > 0)
                             {
                                 PlaceVegetationObject(position, bushPrefabs, forestsContainer, seed);
                                 bushCount++;
@@ -958,13 +960,13 @@ namespace Hearthbound.World
 
                         case "plains":
                         case "grass":
-                            // Sparse trees and bushes in plains
-                            if (densityNoise < plainsTreeDensity && treePrefabs != null && treePrefabs.Length > 0)
+                            // Sparse trees and bushes in plains (mutually exclusive - either tree OR bush)
+                            if (treeNoise < plainsTreeDensity && treePrefabs != null && treePrefabs.Length > 0)
                             {
                                 PlaceVegetationObject(position, treePrefabs, forestsContainer, seed);
                                 treeCount++;
                             }
-                            else if (densityNoise < plainsBushDensity && bushPrefabs != null && bushPrefabs.Length > 0)
+                            else if (bushNoise < plainsBushDensity && bushPrefabs != null && bushPrefabs.Length > 0)
                             {
                                 PlaceVegetationObject(position, bushPrefabs, forestsContainer, seed);
                                 bushCount++;
@@ -974,7 +976,7 @@ namespace Hearthbound.World
                         case "rock":
                         case "mountain":
                             // Rocks in mountain biome (only on moderately steep slopes, not extreme cliffs)
-                            if (densityNoise < 0.2f && rockPrefabs != null && rockPrefabs.Length > 0)
+                            if (treeNoise < 0.2f && rockPrefabs != null && rockPrefabs.Length > 0)
                             {
                                 PlaceVegetationObject(position, rockPrefabs, forestsContainer, seed);
                                 rockCount++;
