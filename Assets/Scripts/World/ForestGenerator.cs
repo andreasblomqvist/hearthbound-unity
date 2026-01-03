@@ -865,6 +865,10 @@ namespace Hearthbound.World
             int treeCount = 0;
             int bushCount = 0;
             int rockCount = 0;
+            int totalSampled = 0;
+            int slopeRejected = 0;
+            int noiseRejected = 0;
+            Dictionary<string, int> biomeCount = new Dictionary<string, int>();
 
             Debug.Log($"🌲 Filling biomes with vegetation (terrain size: {terrainSize.x}x{terrainSize.z}, spacing: {sampleSpacing})");
 
@@ -879,6 +883,7 @@ namespace Hearthbound.World
                     float worldX = x + offsetX;
                     float worldZ = z + offsetZ;
 
+                    totalSampled++;
                     Vector3 position = new Vector3(worldX, 0, worldZ);
 
                     // Get terrain height at this position
@@ -891,6 +896,11 @@ namespace Hearthbound.World
                         continue;
 
                     string biomeLower = biomeName.ToLower();
+
+                    // Track biome distribution
+                    if (!biomeCount.ContainsKey(biomeLower))
+                        biomeCount[biomeLower] = 0;
+                    biomeCount[biomeLower]++;
 
                     // Check slope with biome-specific limits
                     float slope = terrainGenerator.GetSlopeAtPosition(position);
@@ -913,7 +923,10 @@ namespace Hearthbound.World
                     }
 
                     if (slope > slopeLimit)
+                    {
+                        slopeRejected++;
                         continue;
+                    }
 
                     // Use noise for density variation within biomes
                     float densityNoise = NoiseGenerator.GetNoise2D(worldX, worldZ, seed + 7777, 0.05f);
@@ -968,9 +981,19 @@ namespace Hearthbound.World
                 }
             }
 
-            int totalSamples = Mathf.RoundToInt((terrainSize.x / sampleSpacing) * (terrainSize.z / sampleSpacing));
+            int totalPlaced = treeCount + bushCount + rockCount;
+            float placementRate = totalSampled > 0 ? (totalPlaced / (float)totalSampled) * 100f : 0f;
+
             Debug.Log($"✅ Biome-fill complete: {treeCount} trees, {bushCount} bushes, {rockCount} rocks");
-            Debug.Log($"   Sampled {totalSamples} positions across terrain (spacing: {sampleSpacing}m)");
+            Debug.Log($"   Sampled: {totalSampled} positions | Placed: {totalPlaced} ({placementRate:F1}%)");
+            Debug.Log($"   Rejected - Slope: {slopeRejected} ({(slopeRejected/(float)totalSampled)*100f:F1}%)");
+
+            // Show biome distribution
+            Debug.Log($"   Biome distribution:");
+            foreach (var kvp in biomeCount)
+            {
+                Debug.Log($"     {kvp.Key}: {kvp.Value} samples ({(kvp.Value/(float)totalSampled)*100f:F1}%)");
+            }
         }
 
         /// <summary>

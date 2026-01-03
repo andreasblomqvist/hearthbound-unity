@@ -28,7 +28,9 @@ namespace Hearthbound.World
                 terrainPosition.z / terrainData.size.z
             );
 
-            return terrainData.GetInterpolatedHeight(normalizedPosition.x, normalizedPosition.z);
+            // Get terrain-relative height and convert to world Y coordinate
+            float terrainRelativeHeight = terrainData.GetInterpolatedHeight(normalizedPosition.x, normalizedPosition.z);
+            return terrain.transform.position.y + terrainRelativeHeight;
         }
 
         /// <summary>
