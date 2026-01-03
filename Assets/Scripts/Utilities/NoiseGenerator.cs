@@ -67,27 +67,59 @@ namespace Hearthbound.Utilities
         /// </summary>
         public static float GetMountainRangeNoise(float x, float y, int seed, float frequency = 0.0008f, float warpStrength = 150f)
         {
-            // Domain warping to elongate mountains into ranges
-            // Warp more in one direction to create linear ranges
-            float warpX = GetNoise2D(x, y, seed + 100, frequency * 0.5f) * warpStrength;
-            float warpY = GetNoise2D(x, y, seed + 200, frequency * 0.3f) * (warpStrength * 0.6f); // Less warping in Y for elongation
-            
-            // Apply asymmetric warp (more in X direction)
+            // REDESIGNED: Sharp, angular mountains like reference image
+
+            // Reduced domain warping for less smooth deformation
+            float warpX = GetNoise2D(x, y, seed + 100, frequency * 0.5f) * (warpStrength * 0.5f);
+            float warpY = GetNoise2D(x, y, seed + 200, frequency * 0.3f) * (warpStrength * 0.3f);
+
             float warpedX = x + warpX;
             float warpedY = y + warpY;
-            
-            // Generate base noise at warped coordinates
-            float noise = GetFractalNoise(warpedX, warpedY, seed + 3000, 4, frequency, 2.5f, 0.6f);
-            
-            // Apply ridged noise for sharp peaks: 1 - abs(noise * 2 - 1)
-            // This inverts it so peaks are HIGH (1.0) and valleys are LOW (0.0)
-            float ridgedNoise = 1f - Mathf.Abs(noise * 2f - 1f);
-            
-            // Add power curve for sharper peaks
-            ridgedNoise = Mathf.Pow(ridgedNoise, 1.5f);
-            
-            // Return value 0-1
-            return Mathf.Clamp01(ridgedNoise);
+
+            // Generate base ridged noise with fewer octaves for sharper features
+            float baseNoise = GetFractalNoise(warpedX, warpedY, seed + 3000, 4, frequency, 2.0f, 0.5f);
+
+            // SHARP ridged peaks - more aggressive formula
+            float ridgedNoise = 1f - Mathf.Abs(baseNoise * 2f - 1f);
+
+            // Sharp power curve for angular peaks (balanced sharpness)
+            ridgedNoise = Mathf.Pow(ridgedNoise, 2.2f);
+
+            // Add second layer of sharp ridges at different frequency for variation
+            float ridgedDetail = GetFractalNoise(x, y, seed + 3500, 3, frequency * 2.5f, 2.0f, 0.5f);
+            ridgedDetail = 1f - Mathf.Abs(ridgedDetail * 2f - 1f);
+            ridgedDetail = Mathf.Pow(ridgedDetail, 2.8f) * 0.5f;
+
+            // Combine for sharp, varied peaks
+            float finalNoise = ridgedNoise + ridgedDetail;
+
+            return Mathf.Clamp01(finalNoise);
+        }
+
+        /// <summary>
+        /// Generate cliff noise using Voronoi cells for dramatic, angular rock faces
+        /// Blends Voronoi cellular patterns with ridged noise for natural-looking sharp cliffs
+        /// </summary>
+        public static float GetCliffNoise(float x, float y, int seed, float frequency = 0.01f, float cliffStrength = 0.5f)
+        {
+            // Generate Voronoi cells for sharp boundaries
+            float voronoi = GetVoronoiNoise(x, y, seed + 5000, frequency);
+
+            // Invert Voronoi to make cell boundaries high (cliffs) and centers low (flat areas)
+            float cliffPattern = 1f - voronoi;
+
+            // Apply power curve to sharpen the cliffs
+            cliffPattern = Mathf.Pow(cliffPattern, 2.5f);
+
+            // Add some variation with ridged noise so cliffs aren't too uniform
+            float ridgedVariation = GetRidgeNoise(x, y, seed + 5500, frequency * 0.7f);
+            ridgedVariation = Mathf.Pow(ridgedVariation, 1.5f);
+
+            // Blend cliff pattern with ridged variation
+            float finalCliff = cliffPattern * 0.7f + ridgedVariation * 0.3f;
+
+            // Apply cliff strength
+            return finalCliff * cliffStrength;
         }
 
         /// <summary>
@@ -97,9 +129,13 @@ namespace Hearthbound.Utilities
         public static float GetContinentalMask(float x, float y, int seed, float frequency = 0.0003f)
         {
             // Use very low frequency noise for large-scale features (default 0.0003)
-            // Use fractal noise with 2 octaves for smooth transitions
-            float mask = GetFractalNoise(x, y, seed + 4000, 2, frequency, 2.0f, 0.5f);
-            
+            // IMPROVED: Use 3 octaves instead of 2 for more natural variation
+            float mask = GetFractalNoise(x, y, seed + 4000, 3, frequency, 2.0f, 0.5f);
+
+            // IMPROVED: Add slight high-frequency variation to break up uniformity
+            float detail = GetNoise2D(x, y, seed + 4500, frequency * 10f) * 0.1f;
+            mask = Mathf.Clamp01(mask + detail - 0.05f);
+
             // Return value 0-1 where high values = mountain regions, low values = plains
             return mask;
         }
@@ -108,38 +144,57 @@ namespace Hearthbound.Utilities
         /// Generate height value for terrain
         /// Creates realistic mountain ranges using continental mask and domain warping
         /// </summary>
-        public static float GetTerrainHeight(float x, float y, int seed, 
+        public static float GetTerrainHeight(float x, float y, int seed,
             float baseHeight, float hillHeight, float mountainHeight,
-            float continentalThreshold, float warpStrength, 
+            float continentalThreshold, float warpStrength,
             float mountainFrequency, float peakSharpness, float continentalMaskFrequency,
             System.Collections.Generic.List<Vector2> riverPath,
-            float riverWidth, float riverDepth, float lakeRadius, float lakeDepth)
+            float riverWidth, float riverDepth, float lakeRadius, float lakeDepth,
+            float cliffStrength = 0.3f, float cliffFrequency = 0.01f, float cliffThreshold = 0.6f)
         {
             // 1. Generate continental mask (very low frequency) to define where mountains appear
             float continentalMask = GetContinentalMask(x, y, seed, continentalMaskFrequency);
             
-            // 2. Generate base plains using low frequency noise
+            // 2. Generate base plains (relatively flat with gentle variation)
             float baseNoise = GetNoise2D(x, y, seed, 0.001f);
-            // FIXED: Use full baseHeight and ensure minimum height
-            // Ensure base terrain has minimum height to prevent everything being underwater
-            // Use higher multiplier to get more visible terrain
-            float plainsHeight = Mathf.Max(baseNoise * baseHeight, baseHeight * 0.5f); // Minimum 50% of baseHeight everywhere
+            // REDESIGNED: Flatter plains with gentle variation
+            // Use mostly flat base with gentle noise variation (40%)
+            float plainsHeight = baseHeight * 0.5f + (baseNoise * baseHeight * 0.4f);
             
             
-            // 3. Generate rolling hills using medium frequency fractal noise
-            float hillNoise = GetFractalNoise(x, y, seed + 1000, 3, 0.003f, 2.2f, 0.5f);
-            // Use smooth multipliers based on continental mask, respecting thresholds
-            // Hills appear gradually starting at mask 0.3, full strength at mask 0.7
-            float hillMask = Mathf.Clamp01((continentalMask - 0.3f) * 2.5f);
-            float hillsHeight = hillNoise * hillHeight * hillMask;
+            // 3. Generate gentle hills (reduced for flatter valleys)
+            // REDESIGNED: Fewer octaves (3) for less rolling but some variation
+            float hillNoise = GetFractalNoise(x, y, seed + 1000, 3, 0.003f, 2.0f, 0.5f);
+            // Hills appear gradually (0.35-0.7 range) for smoother transition
+            float hillMask = Mathf.Clamp01((continentalMask - 0.35f) * 2.86f);
+            float hillsHeight = hillNoise * hillHeight * hillMask * 0.7f;
             
             // 4. Generate mountain ranges using domain warping and ridged noise
             float mountainRangeNoise = GetMountainRangeNoise(x, y, seed, mountainFrequency, warpStrength);
-            
+
             // Use smooth multipliers based on continental mask, respecting continental threshold
             // Mountains appear gradually starting at threshold, full strength at threshold + 0.33
             float mountainMask = Mathf.Clamp01((continentalMask - continentalThreshold) * 3.0f);
-            float mountainsHeight = mountainRangeNoise * mountainHeight * 1.5f * mountainMask;
+
+            // 4b. Add Voronoi cliffs for dramatic, angular rock faces in high mountain areas (OPTIONAL)
+            // Cliffs are additive - they enhance mountains without replacing the base ridged noise
+            float cliffNoise = 0f;
+            if (cliffStrength > 0.01f) // Only calculate if cliff strength is significant
+            {
+                cliffNoise = GetCliffNoise(x, y, seed, cliffFrequency, cliffStrength);
+
+                // Cliffs only appear in very high mountain regions (above cliffThreshold)
+                float cliffMask = Mathf.Clamp01((continentalMask - cliffThreshold) * 5.0f);
+
+                // Add cliff noise on top of mountains (additive, not replacement)
+                cliffNoise = cliffNoise * cliffMask * 0.3f; // Scale down to prevent overwhelming
+            }
+
+            // Combine ridged mountains with cliff enhancement
+            float combinedMountainNoise = mountainRangeNoise + cliffNoise;
+
+            // REDESIGNED: Increased multiplier (1.5 → 2.0) for dramatic peaks
+            float mountainsHeight = combinedMountainNoise * mountainHeight * 2.0f * mountainMask;
             
             // 5. Combine layers - RAW height values (not normalized)
             float height = plainsHeight + hillsHeight + mountainsHeight;
@@ -191,16 +246,53 @@ namespace Hearthbound.Utilities
         }
 
         /// <summary>
-        /// Generate Voronoi-like noise for cellular patterns
-        /// Useful for village placement, biome boundaries, etc.
+        /// Generate Voronoi/Cellular noise for sharp, dramatic patterns
+        /// Creates cellular patterns with sharp boundaries - perfect for cliffs and angular terrain
+        /// Returns 0-1 where low values = cell boundaries (sharp edges), high values = cell centers
         /// </summary>
-        public static float GetVoronoiNoise(float x, float y, int seed, float cellSize = 100f)
+        public static float GetVoronoiNoise(float x, float y, int seed, float frequency = 0.01f)
         {
-            // Simple Voronoi approximation using multiple noise layers
-            float noise1 = GetNoise2D(x, y, seed, 1f / cellSize);
-            float noise2 = GetNoise2D(x + 100f, y + 100f, seed, 1f / cellSize);
-            
-            return Mathf.Abs(noise1 - noise2);
+            // Scale coordinates by frequency
+            x *= frequency;
+            y *= frequency;
+
+            // Determine base cell coordinates
+            int cellX = Mathf.FloorToInt(x);
+            int cellY = Mathf.FloorToInt(y);
+
+            float minDistance = float.MaxValue;
+
+            // Check 3x3 grid of cells around the point
+            for (int offsetX = -1; offsetX <= 1; offsetX++)
+            {
+                for (int offsetY = -1; offsetY <= 1; offsetY++)
+                {
+                    int neighborX = cellX + offsetX;
+                    int neighborY = cellY + offsetY;
+
+                    // Generate pseudo-random feature point within this cell
+                    // Use seed-based hashing for deterministic random positions
+                    uint hash = (uint)(seed + neighborX * 374761393 + neighborY * 668265263);
+                    hash ^= hash << 13;
+                    hash ^= hash >> 17;
+                    hash ^= hash << 5;
+
+                    float featureX = neighborX + ((hash % 1000000) / 1000000f);
+                    hash = hash * 1103515245 + 12345; // Next random
+                    float featureY = neighborY + ((hash % 1000000) / 1000000f);
+
+                    // Calculate distance to this feature point
+                    float dx = x - featureX;
+                    float dy = y - featureY;
+                    float distance = Mathf.Sqrt(dx * dx + dy * dy);
+
+                    minDistance = Mathf.Min(minDistance, distance);
+                }
+            }
+
+            // Normalize distance to roughly 0-1 range
+            // Typical max distance in a cell is ~0.707 (corner to corner)
+            return Mathf.Clamp01(minDistance * 1.4f);
         }
 
         /// <summary>

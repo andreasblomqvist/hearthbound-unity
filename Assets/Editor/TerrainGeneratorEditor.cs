@@ -61,6 +61,25 @@ namespace Hearthbound.Editor
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space(10);
+
+            // Preset controls
+            SerializedProperty presetProp = serializedObject.FindProperty("currentPreset");
+            if (presetProp.objectReferenceValue != null)
+            {
+                EditorGUILayout.LabelField("Preset Controls", EditorStyles.boldLabel);
+                if (GUILayout.Button("Apply Current Preset", GUILayout.Height(35)))
+                {
+                    TerrainStylePreset preset = presetProp.objectReferenceValue as TerrainStylePreset;
+                    if (preset != null)
+                    {
+                        preset.ApplyTo(terrainGenerator);
+                        Debug.Log($"✅ Applied preset: {preset.styleName}");
+                    }
+                }
+                EditorGUILayout.Space(10);
+            }
+
+            EditorGUILayout.Space(10);
             EditorGUILayout.LabelField("River Path Selection", EditorStyles.boldLabel);
 
             // Show current values

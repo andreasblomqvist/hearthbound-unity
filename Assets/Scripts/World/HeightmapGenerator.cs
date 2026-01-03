@@ -22,6 +22,11 @@ namespace Hearthbound.World
         public float MountainFrequency { get; set; } = 0.0008f;
         public float PeakSharpness { get; set; } = 1.3f;
 
+        // Cliff parameters (Voronoi-based dramatic cliffs)
+        public float CliffStrength { get; set; } = 0.3f;
+        public float CliffFrequency { get; set; } = 0.01f;
+        public float CliffThreshold { get; set; } = 0.6f;
+
         // Water carving parameters
         public float RiverWidth { get; set; } = 40f;
         public float RiverDepth { get; set; } = 200f;
@@ -89,7 +94,8 @@ namespace Hearthbound.World
                         BaseHeight, HillHeight, MountainHeight,
                         ContinentalThreshold, WarpStrength, MountainFrequency, PeakSharpness, ContinentalMaskFrequency,
                         riverPath,
-                        RiverWidth, RiverDepth, LakeRadius, LakeDepth
+                        RiverWidth, RiverDepth, LakeRadius, LakeDepth,
+                        CliffStrength, CliffFrequency, CliffThreshold
                     );
 
                     // Track actual min/max

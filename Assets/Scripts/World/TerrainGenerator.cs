@@ -74,6 +74,19 @@ namespace Hearthbound.World
         [Range(1.0f, 2.0f)]
         [SerializeField] private float peakSharpness = 1.3f;
 
+        [Header("Cliff Generation (Voronoi)")]
+        [Tooltip("Cliff strength - controls prominence of Voronoi cliffs")]
+        [Range(0f, 1f)]
+        [SerializeField] private float cliffStrength = 0.3f;
+
+        [Tooltip("Cliff frequency - controls scale of Voronoi cells")]
+        [Range(0.005f, 0.02f)]
+        [SerializeField] private float cliffFrequency = 0.01f;
+
+        [Tooltip("Cliff threshold - minimum continental mask value for cliffs to appear")]
+        [Range(0.4f, 0.8f)]
+        [SerializeField] private float cliffThreshold = 0.6f;
+
         [Header("Rivers and Lakes")]
         [Tooltip("How to generate river path: Auto or Manual")]
         [SerializeField] private RiverPathMode riverPathMode = RiverPathMode.Auto;
@@ -208,6 +221,9 @@ namespace Hearthbound.World
             heightmapGenerator.WarpStrength = warpStrength;
             heightmapGenerator.MountainFrequency = mountainFrequency;
             heightmapGenerator.PeakSharpness = peakSharpness;
+            heightmapGenerator.CliffStrength = cliffStrength;
+            heightmapGenerator.CliffFrequency = cliffFrequency;
+            heightmapGenerator.CliffThreshold = cliffThreshold;
             heightmapGenerator.RiverWidth = riverWidth;
             heightmapGenerator.RiverDepth = riverDepth;
             heightmapGenerator.LakeRadius = lakeRadius;
@@ -276,6 +292,12 @@ namespace Hearthbound.World
         #region Main Generation
         public void GenerateTerrain(int seed)
         {
+            // Ensure subsystems are initialized (important for Edit mode)
+            if (heightmapGenerator == null)
+            {
+                InitializeSubsystems();
+            }
+
             // Ensure terrain is initialized
             if (terrain == null || terrainData == null)
             {
@@ -463,6 +485,27 @@ namespace Hearthbound.World
             peakSharpness = value;
             if (heightmapGenerator != null)
                 heightmapGenerator.PeakSharpness = value;
+        }
+
+        public void SetCliffStrength(float value)
+        {
+            cliffStrength = value;
+            if (heightmapGenerator != null)
+                heightmapGenerator.CliffStrength = value;
+        }
+
+        public void SetCliffFrequency(float value)
+        {
+            cliffFrequency = value;
+            if (heightmapGenerator != null)
+                heightmapGenerator.CliffFrequency = value;
+        }
+
+        public void SetCliffThreshold(float value)
+        {
+            cliffThreshold = value;
+            if (heightmapGenerator != null)
+                heightmapGenerator.CliffThreshold = value;
         }
 
         public void SetTerrainSize(float width, float length, float height)

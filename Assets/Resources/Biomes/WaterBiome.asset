@@ -23,4 +23,4 @@ MonoBehaviour:
   - diffuseTexture: {fileID: 0}
     tileSize: {x: 15, y: 15}
     color: {r: 0.1, g: 0.5, b: 0.9, a: 1}
-  blendStrength: 3
+  blendStrength: 8

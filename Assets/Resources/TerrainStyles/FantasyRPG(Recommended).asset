@@ -14,9 +14,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   styleName: Fantasy RPG (Recommended)
   description: Varied, playable terrain for open world RPG. Balanced distribution.
+  terrainWidth: 8000
+  terrainLength: 8000
+  terrainHeight: 1000
+  heightmapResolution: 513
   baseHeight: 60
-  hillHeight: 140
-  mountainHeight: 550
+  hillHeight: 180
+  mountainHeight: 800
   heightCurve:
     serializedVersion: 2
     m_Curve:
@@ -50,11 +54,20 @@ MonoBehaviour:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
-  waterHeight: 0.1
+  continentalThreshold: 0.6
+  continentalMaskFrequency: 0.00004
+  warpStrength: 220
+  mountainFrequency: 0.0005
+  peakSharpness: 1
+  cliffStrength: 0.4
+  cliffFrequency: 0.01
+  cliffThreshold: 0.6
+  applyErosion: 1
+  erosionIterations: 10000
+  erosionStrength: 0.3
+  sedimentCapacity: 4
+  evaporationRate: 0.05
+  waterHeight: 0.05
   grassHeight: 0.3
   rockHeight: 0.6
   snowHeight: 0.7
-  continentalThreshold: 0.5
-  warpStrength: 150
-  mountainFrequency: 0.0008
-  peakSharpness: 1.3

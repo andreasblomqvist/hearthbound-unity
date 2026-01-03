@@ -14,7 +14,7 @@ namespace Hearthbound.World
         public float GrassHeight { get; set; } = 0.3f;
         public float RockHeight { get; set; } = 0.6f;
         public float SnowHeight { get; set; } = 0.7f;
-        public float SteepSlope { get; set} = 45f;
+        public float SteepSlope { get; set; } = 45f;
 
         // Biome system configuration
         public BiomeCollection BiomeCollection { get; set; }

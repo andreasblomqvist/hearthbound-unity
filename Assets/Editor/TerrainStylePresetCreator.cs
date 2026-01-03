@@ -201,11 +201,11 @@ namespace Hearthbound.Editor
         {
             CreatePreset(
                 "Balanced Fantasy 8K (Recommended)",
-                "8000x8000 balanced terrain perfect for open-world RPG exploration.",
-                8000f, 8000f, 1000f, 513,  // Size
-                80f, 140f, 600f,  // Heights
-                0.55f, 0.00005f, 200f,  // Noise
-                0.0005f, 1.0f  // Mountain freq, sharpness
+                "8000x8000 balanced terrain with varied elevation and dramatic vistas.",
+                8000f, 8000f, 1200f, 513,  // Size - increased height for taller mountains
+                60f, 180f, 800f,  // Heights - better distinction: plains, hills, mountains
+                0.6f, 0.00004f, 220f,  // Noise - more plains (0.6 threshold), larger regions, stronger warp
+                0.0004f, 1.0f  // Mountain freq lower = larger mountain ranges
             );
         }
     }
