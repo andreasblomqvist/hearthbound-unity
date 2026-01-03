@@ -13,11 +13,11 @@ MonoBehaviour:
   m_Name: ForestBiome
   m_EditorClassIdentifier: 
   biomeName: Forest
-  heightRange: {x: 0, y: 0.2}
-  temperatureRange: {x: 0.3, y: 0.7}
-  humidityRange: {x: 0.5, y: 1}
-  humidity: 0.8
-  temperature: 0.6
+  heightRange: {x: 0.01, y: 0.3}
+  temperatureRange: {x: 0.3, y: 0.8}
+  humidityRange: {x: 0.6, y: 1}
+  humidity: 0.75
+  temperature: 0.5
   heightMultiplier: 1
   terrainLayers:
   - diffuseTexture: {fileID: 2800000, guid: ffbc4ff073065254585f69e966389160, type: 3}

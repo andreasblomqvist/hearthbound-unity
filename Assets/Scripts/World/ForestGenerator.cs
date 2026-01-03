@@ -880,8 +880,10 @@ namespace Hearthbound.World
                     // Add random offset for natural distribution
                     float offsetX = Random.Range(-sampleSpacing * 0.5f, sampleSpacing * 0.5f);
                     float offsetZ = Random.Range(-sampleSpacing * 0.5f, sampleSpacing * 0.5f);
-                    float worldX = x + offsetX;
-                    float worldZ = z + offsetZ;
+
+                    // Convert terrain local coordinates to world coordinates
+                    float worldX = terrain.transform.position.x + x + offsetX;
+                    float worldZ = terrain.transform.position.z + z + offsetZ;
 
                     totalSampled++;
                     Vector3 position = new Vector3(worldX, 0, worldZ);
